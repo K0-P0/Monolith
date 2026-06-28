@@ -21,7 +21,7 @@ Include in your report:
 - Potential impact
 - Any suggested fix (optional)
 
-You can expect an acknowledgment within **48 hours** and a status update within **7 days**.
+You can expect an acknowledgment within **7 days** and a status update within **14 days**.
 
 If the vulnerability is confirmed, a fix will be prioritized and released as quickly as possible. You will be credited in the release notes unless you prefer to remain anonymous.
 
