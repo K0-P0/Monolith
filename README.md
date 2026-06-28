@@ -1,8 +1,8 @@
 Monolith
 ========
 A self-hosted personal finance dashboard with encrypted data, mandatory 2FA,
-and a modular plugin system. Run it on your own machine or server — your data
-never leaves your hands.
+and a modular plugin system. Run it on your own machine, a VM, an LXC
+container, or a VPS — your data never leaves your hands.
 
 
 FEATURES
@@ -14,7 +14,7 @@ FEATURES
 - SQLite database with WAL mode for multi-worker safety
 - Admin panel with user management and global plugin controls
 - Full JSON export and import for backups
-- Docker ready — one command to run
+- Runs on Docker, bare metal, LXC, or any VM
 
 
 PLUGINS INCLUDED
@@ -73,12 +73,41 @@ UPDATING TO A NEW VERSION
 Your data in the volume is untouched during updates.
 
 
-RUNNING WITHOUT DOCKER (dev mode)
------------------------------------
+RUNNING ON BARE METAL (LXC, VM, or VPS)
+-----------------------------------------
+This works great on a Proxmox LXC, a Ubuntu/Debian VM, or any VPS.
+
+1. Clone or copy the Code/ directory onto your machine.
+
+2. Create a virtual environment and install dependencies:
+   cd Code/
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+
+3. Run the deploy script to set up Nginx + Gunicorn as a system service:
+   sudo bash deploy.sh
+
+4. Control it with the runM script:
+   runM start
+   runM stop
+   runM restart
+   runM status
+
+5. Open http://<your-machine-ip> in your browser.
+   The first account you register becomes the admin.
+
+To prevent it from auto-starting on boot:
+   sudo systemctl disable vault nginx
+
+
+RUNNING IN DEV MODE (no Nginx)
+--------------------------------
   cd Code/
-  python -m venv venv && source venv/bin/activate
-  pip install -r requirements.txt
+  source venv/bin/activate
   bash run.sh
+
+Runs on http://localhost:5000 with auto-reload.
 
 
 SECURITY NOTES
