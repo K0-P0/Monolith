@@ -1,0 +1,20 @@
+[Unit]
+Description=Vault v5 — Gunicorn
+After=network.target
+
+[Service]
+User=kopo
+Group=kopo
+WorkingDirectory=/home/kopo/BarnOS/Monolith/Code
+Environment="VAULT_COOKIE_SECURE=true"
+ExecStart=/home/kopo/BarnOS/Monolith/Code/venv/bin/gunicorn \
+    --config /home/kopo/BarnOS/Monolith/Code/gunicorn.conf.py \
+    server:app
+Restart=on-failure
+RestartSec=5
+# Give workers time to finish in-flight requests on stop
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
