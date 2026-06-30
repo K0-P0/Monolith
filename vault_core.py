@@ -1,7 +1,7 @@
 import json, os, uuid, secrets, base64, sqlite3, time, logging
 from datetime import date
 from pathlib import Path
-from functools import wraps
+from functools import wraps, lru_cache
 from flask import session, jsonify, request
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -20,8 +20,9 @@ def _master():
 
 MASTER = _master()
 
+@lru_cache(maxsize=256)
 def _fernet(uid: str) -> Fernet:
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=uid.encode(), iterations=100_000)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=uid.encode(), iterations=600_000)
     return Fernet(base64.urlsafe_b64encode(kdf.derive(MASTER)))
 
 def load_mod_data(uid: str, mod_id: str) -> dict:
@@ -56,7 +57,7 @@ def get_db():
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
-def new_id() -> str: return str(uuid.uuid4())[:8]
+def new_id() -> str: return str(uuid.uuid4())
 def today() -> str:  return date.today().isoformat()
 
 class RateLimiter:

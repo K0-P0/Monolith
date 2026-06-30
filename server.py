@@ -37,6 +37,21 @@ app.config.update(
 )
 PLUGINS = {}
 
+@app.after_request
+def _security_headers(response):
+    response.headers["X-Frame-Options"]        = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    return response
+
 def _regenerate_session():
     data = dict(session)
     session.clear()
@@ -181,7 +196,7 @@ def register():
     username = r.get("username", "").strip()
     password = r.get("password", "")
     if len(username) < 3: return jsonify({"error": "Username must be at least 3 characters"}), 400
-    if len(password) < 6: return jsonify({"error": "Password must be at least 6 characters"}), 400
+    if len(password) < 8: return jsonify({"error": "Password must be at least 8 characters"}), 400
     with get_db() as db:
         if db.execute("SELECT 1 FROM users WHERE lower(username)=lower(?)", (username,)).fetchone():
             return jsonify({"error": "Username already taken"}), 409
@@ -199,21 +214,29 @@ def register():
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    ip  = _client_ip()
-    key = f"login:{ip}"
-    allowed, wait = login_limiter.check(key)
+    ip     = _client_ip()
+    ip_key = f"login:{ip}"
+    allowed, wait = login_limiter.check(ip_key)
     if not allowed:
         return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
                         "locked": True, "wait_seconds": wait}), 429
-    r = request.get_json()
+    r        = request.get_json()
+    username = r.get("username", "").strip()
+    user_key = f"login_user:{username.lower()}"
+    allowed, wait = login_limiter.check(user_key)
+    if not allowed:
+        return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
+                        "locked": True, "wait_seconds": wait}), 429
     with get_db() as db:
         u = db.execute("SELECT * FROM users WHERE lower(username)=lower(?)",
-                       (r.get("username", "").strip(),)).fetchone()
+                       (username,)).fetchone()
     if not u or not bcrypt.checkpw(r.get("password", "").encode(), u["password_hash"].encode()):
-        login_limiter.record_failure(key)
-        log_security("login_fail", username=r.get("username", ""), ip=ip, detail="bad_credentials")
+        login_limiter.record_failure(ip_key)
+        login_limiter.record_failure(user_key)
+        log_security("login_fail", username=username, ip=ip, detail="bad_credentials")
         return jsonify({"error": "Invalid username or password"}), 401
-    login_limiter.reset(key)
+    login_limiter.reset(ip_key)
+    login_limiter.reset(user_key)
     _regenerate_session()
     session.permanent = True
     session["uid"] = u["id"]; session["username"] = u["username"]
@@ -372,7 +395,8 @@ def _purge_expired(uid: str):
                 with get_db() as db:
                     db.execute("DELETE FROM user_mods WHERE user_id=? AND mod_id=?",
                                (uid, row["mod_id"])); db.commit()
-        except: pass
+        except Exception:
+            pass
 
 @app.route("/api/mods")
 @auth
@@ -480,8 +504,8 @@ def admin_reset_password(uid):
     if uid == session["uid"]:
         return jsonify({"error": "Use Profile to change your own password"}), 400
     r = request.get_json()
-    if len(r.get("new_password", "")) < 6:
-        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    if len(r.get("new_password", "")) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
     if not r.get("confirmed"):
         return jsonify({"error": "Must confirm data wipe before resetting"}), 400
     with get_db() as db:
@@ -496,6 +520,23 @@ def admin_reset_password(uid):
     log_security("password_reset_by_admin", uid=uid, username=u["username"], detail=f"by_admin={session['uid']}")
     return jsonify({"ok": True, "message": f"Password reset for {u['username']}. Their data has been cleared."})
 
+@app.route("/api/admin/users/<uid>/reset-totp", methods=["DELETE"])
+@admin_only
+def admin_reset_totp(uid):
+    if uid == session["uid"]:
+        return jsonify({"error": "Use Profile to manage your own 2FA"}), 400
+    with get_db() as db:
+        u = db.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()
+        if not u: return jsonify({"error": "User not found"}), 404
+    sec = load_security(uid)
+    sec.pop("totp_secret", None)
+    sec.pop("totp_setup_date", None)
+    sec.pop("backup_codes", None)
+    sec.pop("backup_codes_created", None)
+    save_security(uid, sec)
+    log_security("totp_reset_by_admin", uid=uid, username=u["username"], detail=f"by_admin={session['uid']}")
+    return jsonify({"ok": True, "message": f"2FA reset for {u['username']}. They must re-enroll on next login."})
+
 @app.route("/api/admin/registration", methods=["POST"])
 @admin_only
 def admin_set_registration():
@@ -505,6 +546,7 @@ def admin_set_registration():
                     "message": "Registration " + ("opened." if allow else "closed.")})
 
 @app.route("/api/mod/<mod_id>/ui.js")
+@auth
 def mod_ui_js(mod_id):
     if mod_id not in PLUGINS: return "// mod not found", 404
     ui_file = PLUGINS_DIR / mod_id / "ui.js"
