@@ -123,7 +123,7 @@ SECURITY NOTES
 
 BUILT WITH
 ----------
-  Python / Flask / Gunicorn / Nginx
+  Python / Flask / Gunicorn 
   SQLite (WAL mode)
   cryptography (Fernet)
   bcrypt
