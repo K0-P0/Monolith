@@ -7,6 +7,8 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
+os.umask(0o077)
+
 BASE_DIR    = Path(__file__).parent.resolve()
 _STORAGE    = Path(os.environ.get("MONOLITH_STORAGE", BASE_DIR))
 DATA_DIR    = _STORAGE / "data"
@@ -51,14 +53,26 @@ def delete_security(uid: str):
     delete_mod_data(uid, '_vault_security')
 
 def get_db():
+    is_new = not DB_PATH.exists()
     conn = sqlite3.connect(str(DB_PATH), timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
+    if is_new:
+        os.chmod(DB_PATH, 0o600)
     return conn
 
 def new_id() -> str: return str(uuid.uuid4())
 def today() -> str:  return date.today().isoformat()
+
+TRUSTED_IP_HEADER = "CF-Connecting-IP"
+CF_ONLY           = False  # set True if using a Cloudflare Tunnel, keep False if not
+
+def client_ip() -> str:
+    ip = request.headers.get(TRUSTED_IP_HEADER, "").strip()
+    if ip: return ip.split(",")[0].strip()
+    if not CF_ONLY: return request.remote_addr or "unknown"
+    return "unknown"
 
 class RateLimiter:
     def __init__(self, max_attempts: int = 5, window_secs: int = 900, lockout_secs: int = 900):
@@ -104,8 +118,9 @@ class RateLimiter:
             db.execute("DELETE FROM rate_limits WHERE key=?", (key,))
             db.commit()
 
-login_limiter = RateLimiter(max_attempts=5, window_secs=900, lockout_secs=900)
-totp_limiter  = RateLimiter(max_attempts=5, window_secs=300, lockout_secs=900)
+login_limiter    = RateLimiter(max_attempts=5, window_secs=900, lockout_secs=900)
+totp_limiter     = RateLimiter(max_attempts=5, window_secs=300, lockout_secs=900)
+register_limiter = RateLimiter(max_attempts=5, window_secs=900, lockout_secs=900)
 
 def totp_mark_used(uid: str, code: str):
     now = time.time()

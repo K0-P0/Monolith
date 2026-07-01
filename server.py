@@ -20,9 +20,9 @@ from vault_core import (
     get_db, load_mod_data, save_mod_data, delete_mod_data,
     load_security, save_security, delete_security,
     new_id, today, DATA_DIR,
-    login_limiter, totp_limiter,
+    login_limiter, totp_limiter, register_limiter,
     totp_mark_used, totp_is_used,
-    log_security,
+    log_security, client_ip as _client_ip,
 )
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
@@ -34,6 +34,7 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
     PERMANENT_SESSION_LIFETIME=43200,
+    MAX_CONTENT_LENGTH=32 * 1024 * 1024,
 )
 PLUGINS = {}
 
@@ -45,8 +46,8 @@ def _security_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
         "img-src 'self' data:; "
         "connect-src 'self'"
     )
@@ -112,15 +113,6 @@ def registration_open() -> bool:
         has_users = bool(db.execute("SELECT 1 FROM users LIMIT 1").fetchone())
     if not has_users: return True
     return get_config().get("allow_registration", True)
-
-TRUSTED_IP_HEADER = "CF-Connecting-IP"
-CF_ONLY           = False
-
-def _client_ip() -> str:
-    ip = request.headers.get(TRUSTED_IP_HEADER, "").strip()
-    if ip: return ip.split(",")[0].strip()
-    if not CF_ONLY: return request.remote_addr or "unknown"
-    return "unknown"
 
 def init_db():
     with get_db() as db:
@@ -190,6 +182,13 @@ def registration_status():
 
 @app.route("/api/register", methods=["POST"])
 def register():
+    ip     = _client_ip()
+    ip_key = f"register:{ip}"
+    allowed, wait = register_limiter.check(ip_key)
+    if not allowed:
+        return jsonify({"error": f"Too many attempts. Try again in {wait}s.",
+                        "locked": True, "wait_seconds": wait}), 429
+    register_limiter.record_failure(ip_key)
     if not registration_open():
         return jsonify({"error": "Registration is closed. Contact the admin."}), 403
     r        = request.get_json()
@@ -544,6 +543,83 @@ def admin_set_registration():
     set_config({"allow_registration": allow})
     return jsonify({"ok": True, "allow_registration": allow,
                     "message": "Registration " + ("opened." if allow else "closed.")})
+
+@app.route("/api/user/onboarding", methods=["GET"])
+@auth
+def get_onboarding():
+    uid = session["uid"]
+    data = load_mod_data(uid, '_vault_onboarding')
+    return jsonify({
+        "completed":  bool(data.get("completed")),
+        "selections": data.get("selections", []),
+        "tour_seen":  bool(data.get("tour_seen")),
+    })
+
+@app.route("/api/user/onboarding", methods=["POST"])
+@auth
+def save_onboarding():
+    uid = session["uid"]
+    r = request.get_json() or {}
+    selections = r.get("selections", [])
+
+    MOD_MAP = {
+        "sel_paycheck":  ["paycheck_pro"],
+        "sel_freelance": ["freelance_flow"],
+        "sel_savings":   ["savings"],
+        "sel_debt":      ["debt_payoff"],
+        "sel_bills":     ["bills", "subscriptions"],
+        "sel_vehicle":   ["garage"],
+        "sel_expenses":  ["expenses"],
+        "sel_calendar":  ["calendar_view"],
+    }
+
+    MANAGED = {"paycheck_pro", "freelance_flow", "savings", "debt_payoff",
+               "bills", "subscriptions", "garage", "expenses", "calendar_view",
+               "net_worth"}
+
+    enabled_mods = set()
+    for sel in selections:
+        enabled_mods.update(MOD_MAP.get(sel, []))
+
+    now_iso = datetime.now().isoformat()
+    with get_db() as db:
+        for mod_id in MANAGED:
+            if mod_id not in PLUGINS:
+                continue
+            enable = mod_id in enabled_mods
+            db.execute(
+                """INSERT INTO user_mods(user_id,mod_id,enabled,disabled_at) VALUES(?,?,?,?)
+                   ON CONFLICT(user_id,mod_id) DO UPDATE
+                   SET enabled=excluded.enabled, disabled_at=excluded.disabled_at""",
+                (uid, mod_id, int(enable), None if enable else now_iso)
+            )
+        db.commit()
+
+    save_mod_data(uid, '_vault_onboarding', {
+        "completed":    True,
+        "selections":   selections,
+        "completed_at": now_iso,
+        "tour_seen":    False,
+    })
+    return jsonify({"ok": True})
+
+@app.route("/api/user/tour-seen", methods=["POST"])
+@auth
+def mark_tour_seen():
+    uid  = session["uid"]
+    data = load_mod_data(uid, '_vault_onboarding')
+    data["tour_seen"] = True
+    save_mod_data(uid, '_vault_onboarding', data)
+    return jsonify({"ok": True})
+
+@app.route("/api/user/tour-seen", methods=["DELETE"])
+@auth
+def reset_tour():
+    uid  = session["uid"]
+    data = load_mod_data(uid, '_vault_onboarding')
+    data["tour_seen"] = False
+    save_mod_data(uid, '_vault_onboarding', data)
+    return jsonify({"ok": True})
 
 @app.route("/api/mod/<mod_id>/ui.js")
 @auth
