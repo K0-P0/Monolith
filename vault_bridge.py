@@ -19,7 +19,6 @@ def _period_to_monthly(amount, frequency):
     }
     return amount * multipliers.get(frequency, 0)
 
-
 def get_income_picture(uid: str) -> dict:
     sources   = []
     month_key = _today_str()[:7]
@@ -99,7 +98,6 @@ def get_income_picture(uid: str) -> dict:
         "by_type":       {k: round(v, 2) for k, v in by_type.items()},
     }
 
-
 def get_expense_picture(uid: str) -> dict:
     items     = []
     month_key = _today_str()[:7]
@@ -169,7 +167,6 @@ def get_expense_picture(uid: str) -> dict:
         "by_category":    by_category,
         "by_mod":         by_mod,
     }
-
 
 def get_calendar_events(uid: str, year: int, month: int) -> list:
     events = []
@@ -253,7 +250,6 @@ def get_calendar_events(uid: str, year: int, month: int) -> list:
     type_order = {"income":0,"payment":1,"deadline":2,"reminder":3}
     events.sort(key=lambda e: (e["date"], type_order.get(e["type"], 9)))
     return events
-
 
 def get_financial_health(uid: str) -> dict:
     income_data  = get_income_picture(uid)
