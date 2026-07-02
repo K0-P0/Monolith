@@ -41,9 +41,9 @@ Monolith is built with the following security controls:
 
 ## Deployment Recommendations
 
-- Run behind a reverse proxy (Nginx) — included in both bare-metal and Docker setups
-- Use HTTPS in production — see `INSTALL_GUIDE.txt` for Certbot instructions
-- Do not expose port 5000 (Gunicorn) directly; only expose 80/443 via Nginx
+- Gunicorn serves the app directly on port 80 — there is no reverse proxy in front of it
+- For anything internet-facing, put it behind a Cloudflare Tunnel rather than exposing port 80 directly, then set `CF_ONLY=True` in `vault_core.py` once the tunnel is confirmed working
+- Do not set `CF_ONLY=True` before the tunnel is running — requests without a CF-Connecting-IP header would share a single rate-limit bucket
 - Keep the host system and Python packages updated regularly
 - Back up your `data/` directory and `vault.db` regularly
 
