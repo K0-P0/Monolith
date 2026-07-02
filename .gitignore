@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+data/
+storage/
+vault.db
+vault.db-shm
+vault.db-wal
+.secret
+*.log
