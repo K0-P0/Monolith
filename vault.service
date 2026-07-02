@@ -5,6 +5,8 @@ After=network.target
 [Service]
 User=kopo
 Group=kopo
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WorkingDirectory=/home/kopo/BarnOS/Monolith/Code
 Environment="VAULT_COOKIE_SECURE=true"
 ExecStart=/home/kopo/BarnOS/Monolith/Code/venv/bin/gunicorn \
@@ -12,7 +14,6 @@ ExecStart=/home/kopo/BarnOS/Monolith/Code/venv/bin/gunicorn \
     server:app
 Restart=on-failure
 RestartSec=5
-# Give workers time to finish in-flight requests on stop
 KillMode=mixed
 TimeoutStopSec=30
 

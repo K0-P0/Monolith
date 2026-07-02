@@ -10,7 +10,7 @@ FEATURES
 - Per-user Fernet encrypted data at rest
 - Mandatory TOTP two-factor authentication with backup codes
 - Modular plugin architecture — enable or disable what you need
-- Nginx + Gunicorn production stack
+- Gunicorn production stack
 - SQLite database with WAL mode for multi-worker safety
 - Admin panel with user management and global plugin controls
 - Full JSON export and import for backups
@@ -85,7 +85,7 @@ This works great on a Proxmox LXC, a Ubuntu/Debian VM, or any VPS.
    source venv/bin/activate
    pip install -r requirements.txt
 
-3. Run the deploy script to set up Nginx + Gunicorn as a system service:
+3. Run the deploy script to set up Gunicorn as a system service:
    sudo bash deploy.sh
 
 4. Control it with the runM script:
@@ -98,16 +98,34 @@ This works great on a Proxmox LXC, a Ubuntu/Debian VM, or any VPS.
    The first account you register becomes the admin.
 
 To prevent it from auto-starting on boot:
-   sudo systemctl disable vault nginx
+   sudo systemctl disable vault
 
 
-RUNNING IN DEV MODE (no Nginx)
---------------------------------
+RUNNING IN DEV MODE
+---------------------
   cd Code/
   source venv/bin/activate
   bash run.sh
 
 Runs on http://localhost:5000 with auto-reload.
+
+
+ENABLING HTTPS (recommended for anything internet-facing)
+------------------------------------------------------------
+Monolith serves plain HTTP directly — there is no reverse proxy in front of
+it anymore. For any deployment reachable from the internet, put it behind
+a Cloudflare Tunnel:
+
+1. Install cloudflared and point a tunnel at http://localhost:80
+   (docs: developers.cloudflare.com/cloudflare-one/connections/connect-networks)
+2. Once the tunnel is confirmed working, open vault_core.py and set
+   CF_ONLY = True
+3. Restart: sudo systemctl restart vault
+
+Do not set CF_ONLY = True until the tunnel is actually running — with it
+enabled, every request that arrives without a CF-Connecting-IP header
+(i.e. anything not coming through the tunnel) is logged and rate-limited
+under a single shared "unknown" IP bucket.
 
 
 SECURITY NOTES
@@ -123,8 +141,9 @@ SECURITY NOTES
 
 BUILT WITH
 ----------
-  Python / Flask / Gunicorn 
+  Python / Flask / Gunicorn
   SQLite (WAL mode)
   cryptography (Fernet)
   bcrypt
   pyotp / qrcode
+

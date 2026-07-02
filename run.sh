@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dev launcher — runs Gunicorn locally without Nginx.
+# Dev launcher — runs Gunicorn locally with auto-reload.
 # VAULT_COOKIE_SECURE=false lets the session cookie work over plain HTTP.
 DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/venv/bin/activate"
