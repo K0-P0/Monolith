@@ -1,0 +1,8 @@
+{
+  "id":          "profile",
+  "name":        "Profile",
+  "icon":        "⚙",
+  "description": "Account settings, password, and 2FA management.",
+  "nav_section": "_core",
+  "nav_order":   1
+}

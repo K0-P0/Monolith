@@ -1,11 +1,15 @@
+# Runtime state — never publish
+Code/venv/
+Code/storage/
+Code/data/
+Code/.secret
+Code/vault.db*
+*.log
+
+# Python build artifacts
 __pycache__/
 *.pyc
-*.pyo
-venv/
-data/
-storage/
-vault.db
-vault.db-shm
-vault.db-wal
-.secret
-*.log
+
+# Local zips (install.sh unzips these only if present)
+Code/plugins.zip
+Code/static.zip

@@ -19,22 +19,27 @@ FEATURES
 
 PLUGINS INCLUDED
 ----------------
-  Paycheck Pro        Track income sources, pay frequency, and paycheck history
-  OT Vault            Log overtime hours and calculate net after tax
-  Freelance Flow      Manage freelance jobs, invoices, and payouts
-  Bills               Track recurring bills and due dates
-  Subscriptions       Manage subscriptions with renewal dates
-  Expenses            Log and categorize monthly spending
-  Debt Payoff         Track debt balances with snowball/avalanche strategies
-  Savings             Set savings goals and track contributions
-  Budget              Set spending limits by category
-  Reports             Income, expense, financial health score, and ratios
-  Calendar View       See all bills, paydays, and deadlines in one calendar
-  Garage              Vehicle records, service logs, and renewal reminders
-  News                Admin broadcast board for announcements
-  Quick Math          Fast calculator widget on the dashboard
-  Vault Style         Theme switcher (10 themes)
+  Paycheck Pro          Gross-to-net calculator with 401k & tax engine, payroll import & cashflow projections
+  OT Vault              Log overtime shifts and calculate net take-home
+  Freelance Flow        Track clients, jobs, invoices, and payouts
+  Bills                 Recurring monthly bills with autopay tracking
+  Subscriptions         Track recurring subscriptions and billing cycles
+  Expenses              Log and categorize daily spending
+  Debt Payoff           Track debts, minimums, APR, and payoff progress
+  Savings & Retirement  Goal tracker with Roth IRA and 401k support
+  Budgets               Set monthly category limits and track against actual spending
+  Goals (beta)          Big-picture financial goals with progress bars and pace tracking
+  Net Worth (beta)      Track total assets vs liabilities over time
+  Tax Prep (beta)       Deductible expenses, quarterly estimates, and a filing checklist
+  Bank Sync (beta)      Connect a bank via SimpleFIN for real balances and transactions
+  Reports               Charts and analytics across all your financial data
+  Calendar              Visual calendar of bills, subscriptions, and paydays
+  Upcoming              A feed of upcoming bills, subscriptions, and paydays
+  Garage                Vehicles, service history, insurance, and renewal reminders
+  Quick Math            Fast calculator widget on the dashboard
+  Vault Style           Theme switcher
 
+Plugins marked (beta) work but are still being verified end-to-end.
 
 RUNNING WITH DOCKER (recommended)
 ----------------------------------

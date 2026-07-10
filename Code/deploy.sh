@@ -1,9 +1,8 @@
 #!/bin/bash
-# Run with: sudo bash deploy.sh
-# Sets up Gunicorn for Vault v5 on a fresh machine.
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+OWNER="$(stat -c %U "$DIR")"
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: run this with sudo"
@@ -11,16 +10,17 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo "==> Installing Gunicorn into venv..."
-sudo -u kopo "$DIR/venv/bin/pip" install gunicorn --quiet
+sudo -u "$OWNER" "$DIR/venv/bin/pip" install gunicorn --quiet
 
 echo "==> Installing systemd service..."
-cp "$DIR/vault.service" /etc/systemd/system/vault.service
+sed -e "s|__INSTALL_DIR__|$DIR|g" -e "s|__SERVICE_USER__|$OWNER|g" \
+    "$DIR/vault.service" > /etc/systemd/system/vault.service
 systemctl daemon-reload
 systemctl enable vault
 systemctl start vault
 
 echo ""
-echo "Done. Vault is live on port 80."
+echo "Done. Monolith is live on port 80."
 echo ""
 echo "  Status:  systemctl status vault"
 echo "  Logs:    journalctl -u vault -f"

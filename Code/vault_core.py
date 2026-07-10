@@ -1,10 +1,12 @@
-import json, os, uuid, secrets, base64, sqlite3, time, logging
+import json, os, uuid, secrets, base64, sqlite3, time, logging, string
 from datetime import date
 from pathlib import Path
 from functools import wraps, lru_cache
+import bcrypt
 from flask import session, jsonify, request
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 
 os.umask(0o077)
@@ -18,9 +20,24 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 def _master():
     if SECRET_FILE.exists(): return SECRET_FILE.read_bytes()
-    s = secrets.token_bytes(32); SECRET_FILE.write_bytes(s); os.chmod(SECRET_FILE, 0o600); return s
+    s   = secrets.token_bytes(32)
+    tmp = SECRET_FILE.with_name(f".secret.tmp.{os.getpid()}")
+    tmp.write_bytes(s)
+    os.chmod(tmp, 0o600)
+    try:
+        os.link(tmp, SECRET_FILE)
+        return s
+    except FileExistsError:
+        return SECRET_FILE.read_bytes()
+    finally:
+        tmp.unlink(missing_ok=True)
 
 MASTER = _master()
+
+def _derive_key(purpose: bytes) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=purpose).derive(MASTER)
+
+SESSION_KEY = _derive_key(b"monolith.flask-session-signing")
 
 @lru_cache(maxsize=256)
 def _fernet(uid: str) -> Fernet:
@@ -65,13 +82,18 @@ def get_db():
 def new_id() -> str: return str(uuid.uuid4())
 def today() -> str:  return date.today().isoformat()
 
+def json_body() -> dict:
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
+
 TRUSTED_IP_HEADER = "CF-Connecting-IP"
-CF_ONLY           = False  # set True if using a Cloudflare Tunnel, keep False if not
+CF_ONLY           = False  # set True behind a Cloudflare Tunnel — the CF header is only trusted then
 
 def client_ip() -> str:
+    if not CF_ONLY:
+        return request.remote_addr or "unknown"
     ip = request.headers.get(TRUSTED_IP_HEADER, "").strip()
     if ip: return ip.split(",")[0].strip()
-    if not CF_ONLY: return request.remote_addr or "unknown"
     return "unknown"
 
 class RateLimiter:
@@ -139,6 +161,25 @@ def totp_is_used(uid: str, code: str) -> bool:
             "SELECT used_at FROM totp_used WHERE uid_code=?", (f"{uid}:{code}",)
         ).fetchone()
     return row is not None and now - row["used_at"] < 90
+
+_BACKUP_CODE_CHARS = string.ascii_uppercase + string.digits
+
+def gen_backup_codes(n: int = 8) -> list:
+    return [
+        "".join(secrets.choice(_BACKUP_CODE_CHARS) for _ in range(4))
+        + "-"
+        + "".join(secrets.choice(_BACKUP_CODE_CHARS) for _ in range(4))
+        for _ in range(n)
+    ]
+
+def hash_backup_code(code: str) -> str:
+    return bcrypt.hashpw(code.upper().replace("-", "").encode(), bcrypt.gensalt()).decode()
+
+def verify_backup_code(code: str, hashed: str) -> bool:
+    return bcrypt.checkpw(code.upper().replace("-", "").encode(), hashed.encode())
+
+def backup_codes_remaining(sec: dict) -> int:
+    return sum(1 for c in sec.get("backup_codes", []) if not c.get("used"))
 
 def _sec_logger() -> logging.Logger:
     log = logging.getLogger("monolith.security")

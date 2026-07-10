@@ -1,0 +1,19 @@
+[Unit]
+Description=Monolith — Gunicorn
+After=network.target
+
+[Service]
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+WorkingDirectory=__INSTALL_DIR__
+Environment="VAULT_COOKIE_SECURE=false"
+ExecStart=__INSTALL_DIR__/venv/bin/gunicorn --config __INSTALL_DIR__/gunicorn.conf.py server:app
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

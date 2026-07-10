@@ -1,4 +1,4 @@
-import json, os, sys, secrets, importlib.util, shutil, string
+import json, os, sys, secrets, importlib.util, shutil, threading, signal, time
 from datetime import datetime
 from pathlib import Path
 import bcrypt
@@ -6,28 +6,91 @@ import pyotp
 import qrcode
 from qrcode.image.svg import SvgPathImage
 import io
-from flask import Flask, jsonify, request, send_from_directory, session, Response
+from flask import Flask, jsonify, request, send_from_directory, session, Response, redirect
 
 BASE_DIR    = Path(__file__).parent.resolve()
 STATIC_DIR  = BASE_DIR / "static"
 PLUGINS_DIR = BASE_DIR / "plugins"
-SECRET_FILE = BASE_DIR / ".secret"
 CONFIG_FILE = BASE_DIR / "vault_config.json"
+VERSION_FILE = BASE_DIR / "VERSION"
+VERSION = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else "dev"
 sys.path.insert(0, str(BASE_DIR))
 
 from vault_core import (
     auth, admin_only, partial_auth, mod_auth,
     get_db, load_mod_data, save_mod_data, delete_mod_data,
     load_security, save_security, delete_security,
-    new_id, today, DATA_DIR,
+    new_id, today, json_body, DATA_DIR, SESSION_KEY,
     login_limiter, totp_limiter, register_limiter,
     totp_mark_used, totp_is_used,
+    gen_backup_codes, hash_backup_code, verify_backup_code, backup_codes_remaining,
     log_security, client_ip as _client_ip,
 )
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
-app.secret_key = SECRET_FILE.read_bytes() if SECRET_FILE.exists() else secrets.token_bytes(32)
+app.secret_key = SESSION_KEY
 SESSION_COOKIE_SECURE = os.environ.get("VAULT_COOKIE_SECURE", "true").lower() == "true"
+
+NOMAD_MODE   = os.environ.get("NOMAD_MODE") == "1"
+LAUNCH_TOKEN = os.environ.get("NOMAD_LAUNCH_TOKEN", "")
+APP_BRAND    = "Nomad" if NOMAD_MODE else "Monolith"
+if NOMAD_MODE:
+    app.secret_key = secrets.token_bytes(32)
+_last_heartbeat: float | None = None
+_hb_lock     = threading.Lock()
+_token_used  = False
+
+def _nomad_shutdown():
+    try:
+        with get_db() as db:
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        pass
+    os.kill(os.getpid(), signal.SIGTERM)
+
+def _heartbeat_watcher():
+    time.sleep(30)
+    while True:
+        time.sleep(5)
+        with _hb_lock:
+            hb = _last_heartbeat
+        if hb is not None and time.time() - hb > 20:
+            print("\n  [Nomad] Browser closed — shutting down and saving data...")
+            _nomad_shutdown()
+
+@app.route("/launch")
+def nomad_launch():
+    global _token_used
+    if not NOMAD_MODE:
+        return redirect("/")
+    token = request.args.get("token", "")
+    if _token_used or not LAUNCH_TOKEN or not secrets.compare_digest(token, LAUNCH_TOKEN):
+        return redirect("/")
+    _token_used = True
+    return Response('<!doctype html><meta charset="utf-8"><script>location.replace("/")</script>',
+                    mimetype="text/html")
+
+@app.route("/api/nomad/status")
+def nomad_status():
+    return jsonify({"nomad": NOMAD_MODE})
+
+@app.route("/api/nomad/heartbeat", methods=["POST"])
+def nomad_heartbeat():
+    if not NOMAD_MODE:
+        return jsonify({"error": "Not in Nomad mode"}), 400
+    global _last_heartbeat
+    with _hb_lock:
+        _last_heartbeat = time.time()
+    return jsonify({"ok": True})
+
+@app.route("/api/nomad/shutdown", methods=["POST"])
+def nomad_shutdown():
+    if not NOMAD_MODE:
+        return jsonify({"error": "Not in Nomad mode"}), 400
+    threading.Thread(target=lambda: (time.sleep(0.3), _nomad_shutdown()), daemon=True).start()
+    resp = jsonify({"ok": True, "message": "Nomad shutting down. Safe to eject USB."})
+    resp.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
+    return resp
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -51,6 +114,8 @@ def _security_headers(response):
         "img-src 'self' data:; "
         "connect-src 'self'"
     )
+    if NOMAD_MODE:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return response
 
 def _regenerate_session():
@@ -70,33 +135,14 @@ def make_qr_svg(data: str) -> str:
     svg = svg.replace("<svg ", '<svg style="width:100%;height:auto;max-width:240px" ', 1)
     return svg
 
-_CODE_CHARS = string.ascii_uppercase + string.digits
-
-def _gen_codes(n: int = 8) -> list:
-    return [
-        "".join(secrets.choice(_CODE_CHARS) for _ in range(4))
-        + "-"
-        + "".join(secrets.choice(_CODE_CHARS) for _ in range(4))
-        for _ in range(n)
-    ]
-
-def _hash_code(code: str) -> str:
-    return bcrypt.hashpw(code.upper().replace("-", "").encode(), bcrypt.gensalt()).decode()
-
-def _verify_code(code: str, hashed: str) -> bool:
-    return bcrypt.checkpw(code.upper().replace("-", "").encode(), hashed.encode())
-
 def _find_and_consume_backup(uid: str, code: str) -> bool:
     sec = load_security(uid)
     for entry in sec.get("backup_codes", []):
-        if not entry.get("used") and _verify_code(code, entry["hash"]):
+        if not entry.get("used") and verify_backup_code(code, entry["hash"]):
             entry["used"] = True
             save_security(uid, sec)
             return True
     return False
-
-def _backup_remaining(sec: dict) -> int:
-    return sum(1 for c in sec.get("backup_codes", []) if not c.get("used"))
 
 def get_config() -> dict:
     if CONFIG_FILE.exists():
@@ -180,6 +226,15 @@ def me():
 def registration_status():
     return jsonify({"open": registration_open()})
 
+@app.route("/api/health")
+def health():
+    return jsonify({"ok": True})
+
+@app.route("/api/version")
+@auth
+def api_version():
+    return jsonify({"version": VERSION})
+
 @app.route("/api/register", methods=["POST"])
 def register():
     ip     = _client_ip()
@@ -188,16 +243,21 @@ def register():
     if not allowed:
         return jsonify({"error": f"Too many attempts. Try again in {wait}s.",
                         "locked": True, "wait_seconds": wait}), 429
-    register_limiter.record_failure(ip_key)
     if not registration_open():
+        register_limiter.record_failure(ip_key)
         return jsonify({"error": "Registration is closed. Contact the admin."}), 403
-    r        = request.get_json()
+    r        = json_body()
     username = r.get("username", "").strip()
     password = r.get("password", "")
-    if len(username) < 3: return jsonify({"error": "Username must be at least 3 characters"}), 400
-    if len(password) < 8: return jsonify({"error": "Password must be at least 8 characters"}), 400
+    if len(username) < 3:
+        register_limiter.record_failure(ip_key)
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    if len(password) < 8:
+        register_limiter.record_failure(ip_key)
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
     with get_db() as db:
         if db.execute("SELECT 1 FROM users WHERE lower(username)=lower(?)", (username,)).fetchone():
+            register_limiter.record_failure(ip_key)
             return jsonify({"error": "Username already taken"}), 409
         is_admin = not bool(db.execute("SELECT 1 FROM users LIMIT 1").fetchone())
         uid = new_id()
@@ -206,6 +266,7 @@ def register():
                     bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
                     int(is_admin), today()))
         db.commit()
+    register_limiter.reset(ip_key)
     session.permanent = True
     session["uid"] = uid; session["username"] = username; session["totp_verified"] = False
     return jsonify({"status": "setup_required", "id": uid, "username": username,
@@ -219,7 +280,7 @@ def login():
     if not allowed:
         return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
                         "locked": True, "wait_seconds": wait}), 429
-    r        = request.get_json()
+    r        = json_body()
     username = r.get("username", "").strip()
     user_key = f"login_user:{username.lower()}"
     allowed, wait = login_limiter.check(user_key)
@@ -247,24 +308,32 @@ def login():
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
-    return jsonify({"ok": True})
+    resp = jsonify({"ok": True})
+    if NOMAD_MODE:
+        resp.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
+    return resp
 
 @app.route("/api/totp/setup", methods=["GET"])
 @partial_auth
 def totp_setup_get():
+    if load_security(session["uid"]).get("totp_secret"):
+        log_security("totp_setup_blocked", uid=session["uid"], ip=_client_ip(),
+                     detail="already_configured")
+        return jsonify({"error": "2FA is already configured. Verify with your "
+                                 "current code, or reset it first."}), 403
     with get_db() as db:
         u = db.execute("SELECT username FROM users WHERE id=?", (session["uid"],)).fetchone()
     if not u: return jsonify({"error": "User not found"}), 404
     secret = pyotp.random_base32()
-    uri    = pyotp.TOTP(secret).provisioning_uri(name=u["username"], issuer_name="Monolith")
+    uri    = pyotp.TOTP(secret).provisioning_uri(name=u["username"], issuer_name=APP_BRAND)
     session["pending_totp"] = secret
     return jsonify({"svg": make_qr_svg(uri), "secret": secret, "uri": uri,
-                    "account": u["username"], "issuer": "Monolith"})
+                    "account": u["username"], "issuer": APP_BRAND})
 
 @app.route("/api/totp/setup", methods=["POST"])
 @partial_auth
 def totp_setup_post():
-    r    = request.get_json()
+    r    = json_body()
     code = str(r.get("code", "")).strip().replace(" ", "")
     if len(code) != 6 or not code.isdigit():
         return jsonify({"error": "Enter the 6-digit code from your authenticator app"}), 400
@@ -272,18 +341,23 @@ def totp_setup_post():
     if not secret:
         return jsonify({"error": "Setup session expired — start over"}), 400
     uid = session["uid"]
+    if load_security(uid).get("totp_secret"):
+        log_security("totp_setup_blocked", uid=uid, ip=_client_ip(),
+                     detail="already_configured")
+        return jsonify({"error": "2FA is already configured. Verify with your "
+                                 "current code, or reset it first."}), 403
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
         log_security("totp_setup_fail", uid=uid, ip=_client_ip(), detail="wrong_code")
         return jsonify({"error": "Incorrect code — check your app and try again"}), 400
     if totp_is_used(uid, code):
         return jsonify({"error": "This code was already used — wait for the next one"}), 400
     totp_mark_used(uid, code)
-    plain_codes = _gen_codes(8)
+    plain_codes = gen_backup_codes(8)
     sec = load_security(uid)
     sec.update({
         "totp_secret":          secret,
         "totp_setup_date":      today(),
-        "backup_codes":         [{"hash": _hash_code(c), "used": False} for c in plain_codes],
+        "backup_codes":         [{"hash": hash_backup_code(c), "used": False} for c in plain_codes],
         "backup_codes_created": today(),
     })
     save_security(uid, sec)
@@ -307,7 +381,7 @@ def totp_verify():
         log_security("totp_lockout", uid=uid, ip=_client_ip())
         return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
                         "locked": True, "wait_seconds": wait}), 429
-    r    = request.get_json()
+    r    = json_body()
     code = str(r.get("code", "")).strip().replace(" ", "")
     if len(code) != 6 or not code.isdigit():
         return jsonify({"error": "Enter the 6-digit code"}), 400
@@ -338,7 +412,7 @@ def totp_backup_verify():
     if not allowed:
         return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
                         "locked": True, "wait_seconds": wait}), 429
-    r    = request.get_json()
+    r    = json_body()
     code = str(r.get("code", "")).strip()
     if not code:
         return jsonify({"error": "Enter a backup code"}), 400
@@ -353,7 +427,7 @@ def totp_backup_verify():
     _regenerate_session()
     session.permanent = True
     session["totp_verified"] = True
-    remaining = _backup_remaining(load_security(uid))
+    remaining = backup_codes_remaining(load_security(uid))
     log_security("backup_code_used", uid=uid, ip=_client_ip(), detail=f"{remaining}_remaining")
     with get_db() as db:
         u = db.execute("SELECT id,username,is_admin FROM users WHERE id=?", (uid,)).fetchone()
@@ -425,7 +499,7 @@ def list_mods():
 @auth
 def toggle_mod(mod_id):
     if mod_id not in PLUGINS: return jsonify({"error": "Unknown mod"}), 404
-    enable  = bool(request.get_json().get("enabled", True))
+    enable  = bool(json_body().get("enabled", True))
     uid     = session["uid"]
     now_iso = None if enable else datetime.now().isoformat()
     with get_db() as db:
@@ -453,7 +527,7 @@ def admin_list_mods():
 @admin_only
 def admin_toggle_mod(mod_id):
     if mod_id not in PLUGINS: return jsonify({"error": "Unknown mod"}), 404
-    enable = bool(request.get_json().get("enabled", True))
+    enable = bool(json_body().get("enabled", True))
     with get_db() as db:
         db.execute(
             """INSERT INTO global_mods(mod_id,globally_enabled,disabled_by,disabled_at)
@@ -478,7 +552,7 @@ def admin_users():
         sec = load_security(u["id"])
         u["totp_configured"]        = bool(sec.get("totp_secret"))
         u["totp_setup_date"]        = sec.get("totp_setup_date")
-        u["backup_codes_remaining"] = _backup_remaining(sec)
+        u["backup_codes_remaining"] = backup_codes_remaining(sec)
     return jsonify(users)
 
 @app.route("/api/admin/users/<uid>", methods=["DELETE"])
@@ -502,7 +576,7 @@ def admin_delete_user(uid):
 def admin_reset_password(uid):
     if uid == session["uid"]:
         return jsonify({"error": "Use Profile to change your own password"}), 400
-    r = request.get_json()
+    r = json_body()
     if len(r.get("new_password", "")) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
     if not r.get("confirmed"):
@@ -528,18 +602,24 @@ def admin_reset_totp(uid):
         u = db.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()
         if not u: return jsonify({"error": "User not found"}), 404
     sec = load_security(uid)
-    sec.pop("totp_secret", None)
-    sec.pop("totp_setup_date", None)
-    sec.pop("backup_codes", None)
-    sec.pop("backup_codes_created", None)
-    save_security(uid, sec)
+    for k in ("totp_secret", "totp_setup_date", "backup_codes", "backup_codes_created"):
+        sec.pop(k, None)
+    if sec:
+        save_security(uid, sec)
+    else:
+        delete_security(uid)
     log_security("totp_reset_by_admin", uid=uid, username=u["username"], detail=f"by_admin={session['uid']}")
-    return jsonify({"ok": True, "message": f"2FA reset for {u['username']}. They must re-enroll on next login."})
+    return jsonify({
+        "ok":      True,
+        "message": (f"2FA reset for {u['username']}. "
+                    "They will be required to set up a new authenticator on next login. "
+                    "Their financial data is not affected."),
+    })
 
 @app.route("/api/admin/registration", methods=["POST"])
 @admin_only
 def admin_set_registration():
-    allow = bool(request.get_json().get("allow", True))
+    allow = bool(json_body().get("allow", True))
     set_config({"allow_registration": allow})
     return jsonify({"ok": True, "allow_registration": allow,
                     "message": "Registration " + ("opened." if allow else "closed.")})
@@ -559,7 +639,7 @@ def get_onboarding():
 @auth
 def save_onboarding():
     uid = session["uid"]
-    r = request.get_json() or {}
+    r = json_body()
     selections = r.get("selections", [])
 
     MOD_MAP = {
@@ -642,7 +722,7 @@ def export_json():
     return Response(
         json.dumps(data, indent=2).encode(),
         mimetype="application/json",
-        headers={"Content-Disposition": f'attachment; filename="monolith-backup-{today()}.json"'})
+        headers={"Content-Disposition": f'attachment; filename="{APP_BRAND.lower()}-backup-{today()}.json"'})
 
 @app.route("/api/import/json", methods=["POST"])
 @auth
@@ -650,6 +730,8 @@ def import_json():
     if "file" not in request.files: return jsonify({"error": "no file"}), 400
     try: imported = json.loads(request.files["file"].read().decode())
     except Exception as e: return jsonify({"error": str(e)}), 400
+    if not isinstance(imported, dict):
+        return jsonify({"error": "Backup file must be a JSON object"}), 400
     uid = session["uid"]
     for mid, data in imported.items():
         if mid in PLUGINS and not mid.startswith("_") and isinstance(data, dict):
@@ -659,7 +741,16 @@ def import_json():
 init_db()
 load_plugins()
 
+if NOMAD_MODE:
+    threading.Thread(target=_heartbeat_watcher, daemon=True).start()
+
 if __name__ == "__main__":
-    print(f"\n  Monolith v6 — {len(PLUGINS)} plugins loaded")
-    print(f"  http://0.0.0.0:5000\n")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    if NOMAD_MODE:
+        from waitress import serve
+        print(f"\n  Nomad {VERSION} — {len(PLUGINS)} plugins loaded")
+        print(f"  Listening on http://127.0.0.1:5000 (localhost only)\n")
+        serve(app, host="127.0.0.1", port=5000, threads=4)
+    else:
+        print(f"\n  Monolith {VERSION} — {len(PLUGINS)} plugins loaded")
+        print(f"  http://0.0.0.0:5000\n")
+        app.run(host="0.0.0.0", port=5000, debug=False)

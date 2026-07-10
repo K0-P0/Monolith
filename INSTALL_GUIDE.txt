@@ -1,0 +1,160 @@
+Monolith — Installation Guide
+==============================
+This guide covers installing Monolith on bare metal, a VM, or an LXC container
+running Ubuntu or Debian.
+
+
+REQUIREMENTS
+------------
+  - Ubuntu 22.04+ or Debian 12+ (LXC, VM, VPS, or bare metal)
+  - At least 512MB RAM
+  - Internet access to download dependencies
+  - A user account with sudo privileges
+
+
+STEP 1 — UPDATE YOUR SYSTEM
+-----------------------------
+Open a terminal and run:
+
+  sudo apt update && sudo apt upgrade -y
+
+
+STEP 2 — INSTALL GIT
+---------------------
+  sudo apt install -y git
+
+
+STEP 3 — CLONE THE REPO
+------------------------
+Navigate to where you want to install Monolith, then clone it:
+
+  cd /opt
+  sudo git clone https://github.com/K0-P0/monolith.git
+  cd monolith
+
+
+STEP 4 — RUN THE INSTALL SCRIPT
+---------------------------------
+This script does everything automatically:
+  - Installs Python and all dependencies
+  - Sets up Gunicorn as a system service
+  - Installs the runM control command
+
+Run it with:
+
+  sudo bash install.sh
+
+This will take a minute or two. When it finishes it will print your
+machine's IP address.
+
+
+STEP 5 — OPEN IN YOUR BROWSER
+-------------------------------
+On the same machine:
+  http://localhost
+
+From another device on the same network:
+  http://<your-machine-ip>
+
+The IP is printed at the end of the install script. You can also find it
+by running:
+  hostname -I
+
+
+STEP 6 — CREATE YOUR ACCOUNT
+------------------------------
+The first account you register automatically becomes the admin.
+After that, registration can be opened or closed from the Admin panel.
+
+
+CONTROLLING MONOLITH
+---------------------
+After install, use the runM command from anywhere in the terminal:
+
+  runM start      Start Monolith
+  runM stop       Stop it
+  runM restart    Restart (use this after any code changes)
+  runM status     Check if it's running
+
+View live logs:
+  journalctl -u vault -f
+
+
+PREVENT AUTO-START ON BOOT (optional)
+---------------------------------------
+By default Monolith starts automatically when the machine boots.
+To disable that:
+
+  sudo systemctl disable vault
+
+To re-enable it:
+
+  sudo systemctl enable vault
+
+
+UPDATING MONOLITH
+------------------
+When a new version is released, pull the latest code and restart:
+
+  cd /opt/monolith
+  sudo git pull
+  runM restart
+
+The running version is shown at the bottom of the Admin panel (Users
+tab). For uptime monitoring, http://<ip>/api/health returns {"ok":true}
+without authentication and exposes no data.
+
+
+ENABLING HTTPS / A DOMAIN NAME (recommended for internet-facing use)
+------------------------------------------------------------------------
+Monolith serves plain HTTP directly on port 80 — there is no reverse proxy
+in front of it. For anything reachable from the internet, put it behind a
+Cloudflare Tunnel instead of exposing port 80 directly:
+
+1. Install cloudflared and create a tunnel pointed at http://localhost:80,
+   with your domain attached to it
+   (docs: developers.cloudflare.com/cloudflare-one/connections/connect-networks)
+2. Once the tunnel is confirmed working, edit vault_core.py and set
+   CF_ONLY = True
+3. Restart: sudo systemctl restart vault
+4. You can now block port 80 from the internet entirely (LAN access still
+   works) — the tunnel doesn't need it open
+
+Do not set CF_ONLY = True until the tunnel is actually running — with it
+enabled, every request that arrives without a CF-Connecting-IP header
+(i.e. anything not coming through the tunnel) is logged and rate-limited
+under a single shared "unknown" IP bucket.
+
+
+UNINSTALLING
+-------------
+  sudo systemctl stop vault
+  sudo systemctl disable vault
+  sudo rm /etc/systemd/system/vault.service
+  sudo systemctl daemon-reload
+  sudo rm -rf /opt/monolith
+
+
+TROUBLESHOOTING
+----------------
+Monolith won't start:
+  journalctl -u vault -f
+  (Look for Python errors or missing files)
+
+Port 80 already in use:
+  sudo lsof -i :80
+  (See what process is using port 80 and stop it)
+
+Can't reach it from another device on your LAN:
+  - Make sure your firewall allows port 80 on your local network
+  - sudo ufw allow from 192.168.0.0/16 to any port 80
+  (Only open port 80 to the wider internet if you're intentionally not
+  using a Cloudflare Tunnel — see above)
+
+Permission errors:
+  - Make sure you ran install.sh with sudo
+
+
+NEED HELP?
+----------
+  GitHub: https://github.com/K0-P0/monolith

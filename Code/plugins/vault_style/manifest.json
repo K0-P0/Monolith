@@ -1,0 +1,8 @@
+{
+  "id": "vault_style",
+  "name": "Vault Style",
+  "icon": "\ud83c\udfa8",
+  "description": "Personalize your Vault with a color palette. Changes apply instantly across all pages.",
+  "nav_section": "Account",
+  "nav_order": 98
+}
