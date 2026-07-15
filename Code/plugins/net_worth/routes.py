@@ -1,5 +1,6 @@
-from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body
+from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body, safe_float
 from flask import Blueprint, jsonify, request, session
+import vault_bridge
 
 MOD_ID = "net_worth"
 blueprint = Blueprint(MOD_ID, __name__)
@@ -16,15 +17,19 @@ def _save(uid, assets, liabilities, snapshots):
 def get_all():
     uid = session["uid"]
     assets, liabilities, snapshots = _load(uid)
-    savings_items = load_mod_data(uid, "savings").get("items", [])
-    debt_items    = load_mod_data(uid, "debt_payoff").get("items", [])
+    balance_items = [b for b in vault_bridge.get_balance_items(uid)
+                     if b.get("mod_id") != MOD_ID]
     return jsonify({
         "assets":      assets,
         "liabilities": liabilities,
         "snapshots":   snapshots,
         "imported": {
-            "savings": savings_items,
-            "debts":   debt_items,
+            "savings": [{"name": b.get("name", ""), "current": safe_float(b.get("amount")),
+                         "savings_type": b.get("category", "goal")}
+                        for b in balance_items if b.get("kind") == "savings"],
+            "debts":   [{"name": b.get("name", ""), "balance": safe_float(b.get("amount")),
+                         "debt_type": b.get("category", "")}
+                        for b in balance_items if b.get("kind") == "debt"],
         }
     })
 
@@ -124,3 +129,12 @@ def take_snapshot():
     if len(snapshots) > 24: snapshots = snapshots[-24:]
     _save(uid, assets, liabilities, snapshots)
     return jsonify(snap)
+
+def bridge_balances(uid):
+    assets, liabilities, _ = _load(uid)
+    return ([{"kind": "asset", "name": a.get("name", ""),
+              "amount": safe_float(a.get("value")), "category": a.get("category", "other")}
+             for a in assets] +
+            [{"kind": "liability", "name": l.get("name", ""),
+              "amount": safe_float(l.get("value")), "category": l.get("category", "other")}
+             for l in liabilities])

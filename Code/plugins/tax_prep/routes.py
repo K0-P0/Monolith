@@ -102,3 +102,20 @@ def set_checklist():
     d["checklist"][key] = bool(r.get("done", False))
     _s(uid, d)
     return jsonify(d["checklist"])
+
+_QUARTER_DEADLINES = {4: "Q1", 6: "Q2", 9: "Q3", 1: "Q4"}
+
+def bridge_events(uid, year, month):
+    if month not in _QUARTER_DEADLINES:
+        return []
+    d = _d(uid)
+    if not (d["deductions"] or d["payments"] or d["checklist"]):
+        return []
+    return [{
+        "date":   f"{year:04d}-{month:02d}-15",
+        "label":  f"{_QUARTER_DEADLINES[month]} estimated tax deadline",
+        "amount": 0,
+        "type":   "reminder",
+        "color":  "#fb923c",
+        "icon":   "🧾",
+    }]

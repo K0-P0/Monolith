@@ -1,5 +1,5 @@
 (function(){'use strict';
-let _calY,_calM,_calSel=null;
+let _calY,_calM,_calSel=null,_calSeq=0;
 (()=>{const n=new Date();_calY=n.getFullYear();_calM=n.getMonth();})();
 
 const CAL_MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -21,6 +21,7 @@ const CAL_MN=['January','February','March','April','May','June','July','August',
                 <div style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span><span class="dm">Income</span></div>
                 <div style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block"></span><span class="dm">Bill</span></div>
                 <div style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span><span class="dm">Subscription</span></div>
+                <div style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block"></span><span class="dm">Deadline / Reminder</span></div>
             </div>
             <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">
                 ${['S','M','T','W','T','F','S'].map(h=>`<div style="text-align:center;font-family:var(--fm);font-size:10px;text-transform:uppercase;color:var(--muted);padding:6px 0">${h}</div>`).join('')}
@@ -43,7 +44,7 @@ const CAL_MN=['January','February','March','April','May','June','July','August',
     if(!document.getElementById('cal-css')){
         const s=document.createElement('style');s.id='cal-css';
         s.textContent=`
-.cal-cell{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:6px 5px;min-height:70px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;flex-direction:column}
+.cal-cell{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:6px 5px;min-height:70px;min-width:0;cursor:pointer;transition:border-color .15s,background .15s;display:flex;flex-direction:column}
 .cal-cell:hover{border-color:var(--amber);background:var(--bg3)}
 .cal-cell.td{border-color:var(--amber)!important;background:rgba(240,160,0,.06)}
 .cal-cell.sel{border-color:var(--amber)!important;background:rgba(240,160,0,.13)!important;box-shadow:0 0 0 2px rgba(240,160,0,.28)}
@@ -55,70 +56,78 @@ const CAL_MN=['January','February','March','April','May','June','July','August',
 .cal-pill.sub{background:rgba(224,82,82,.2);color:var(--red)}
 .cal-pill.bill{background:rgba(240,160,0,.15);color:var(--amber)}
 .cal-pill.income{background:rgba(56,200,114,.15);color:var(--green)}
+.cal-pill.note{background:rgba(90,180,255,.15);color:var(--blue)}
 @media(max-width:860px){#cal-layout{grid-template-columns:1fr!important}#cal-day-panel{display:none!important}}`;
         document.head.appendChild(s);
     }
 })();
 
-window.render_calendar_view=async function(){cal_draw();};
+window.render_calendar_view=async function(){await cal_draw();};
 window.cal_prev=function(){_calM--;if(_calM<0){_calM=11;_calY--;}cal_draw();};
 window.cal_next=function(){_calM++;if(_calM>11){_calM=0;_calY++;}cal_draw();};
 window.cal_goto_today=function(){const n=new Date();_calY=n.getFullYear();_calM=n.getMonth();cal_draw();};
 
-function cal_build_events(calData,dim){
-    const evs={};
-    const add=(d,e)=>{if(!evs[d])evs[d]=[];evs[d].push(e);};
-    (calData.subscriptions||[]).filter(s=>s.active&&s.next_due).forEach(s=>{
-        const dt=new Date(s.next_due+'T00:00:00');
-        if(dt.getFullYear()===_calY&&dt.getMonth()===_calM)add(dt.getDate(),{name:s.name,type:'sub',amount:s.amount});
-    });
-    (calData.bills||[]).forEach(b=>{
-        if(b.due_day>=1&&b.due_day<=dim)add(b.due_day,{name:b.name,type:'bill',amount:b.amount});
-    });
-    (calData.sources||[]).forEach(inc=>{
-        if(!inc.last_paid)return;
-        const gap={weekly:7,biweekly:14,semimonthly:15,monthly:30,annual:365}[inc.frequency]||14;
-        let dt=new Date(inc.last_paid+'T00:00:00');
-        const start=new Date(_calY,_calM,1);
-        while(dt<start)dt.setDate(dt.getDate()+gap);
-        while(dt.getMonth()===_calM&&dt.getFullYear()===_calY){
-            add(dt.getDate(),{name:inc.name,type:'income',amount:parseFloat(inc.net||0)});
-            dt.setDate(dt.getDate()+gap);
-        }
-    });
-    return evs;
+function cal_pill_type(e){
+    if(e.type==='income')return'income';
+    if(e.type==='payment')return e.mod_id==='subscriptions'?'sub':'bill';
+    return'note';
 }
 
-function cal_draw(){
-    const calData=DB.calendar_view||{};
+async function cal_fetch_events(){
+    const cached=DB.calendar_view;
+    if(cached&&cached.year===_calY&&cached.month===_calM+1&&Array.isArray(cached.events))return cached.events;
+    try{
+        const d=await api('GET',`/api/mod/calendar_view/?year=${_calY}&month=${_calM+1}`);
+        DB.calendar_view=d;
+        return d.events||[];
+    }catch(e){return[];}
+}
+
+async function cal_draw(){
+    const seq=++_calSeq;
+    const raw=await cal_fetch_events();
+    if(seq!==_calSeq)return;
+    cal_render(raw.map(e=>({
+        day:parseInt(String(e.date||'').slice(8,10),10),
+        name:e.label||'',
+        type:cal_pill_type(e),
+        kind:e.type,
+        amount:parseFloat(e.amount)||0,
+        icon:e.icon||'',
+        mod:e.mod_name||''
+    })).filter(e=>e.day>=1));
+}
+
+function cal_render(monthEvs){
     document.getElementById('cal-ml').textContent=`${CAL_MN[_calM]} ${_calY}`;
     const grid=document.getElementById('cal-grid');if(!grid)return;
     while(grid.children.length>7)grid.removeChild(grid.lastChild);
 
     const now=new Date(),isNow=now.getFullYear()===_calY&&now.getMonth()===_calM;
     const fdow=new Date(_calY,_calM,1).getDay(),dim=new Date(_calY,_calM+1,0).getDate();
-    const evs=cal_build_events(calData,dim);
+    const evs={};
+    monthEvs.forEach(e=>{if(e.day<=dim){if(!evs[e.day])evs[e.day]=[];evs[e.day].push(e);}});
 
-    const allEvs=Object.values(evs).flat();
-    const charges=allEvs.filter(e=>e.type!=='income');
-    const incomes=allEvs.filter(e=>e.type==='income');
-    const outflow=charges.reduce((s,e)=>s+parseFloat(e.amount),0);
-    const inflow=incomes.reduce((s,e)=>s+parseFloat(e.amount),0);
+    const charges=monthEvs.filter(e=>e.type==='sub'||e.type==='bill');
+    const incomes=monthEvs.filter(e=>e.type==='income');
+    const notes=monthEvs.filter(e=>e.type==='note');
+    const outflow=charges.reduce((s,e)=>s+e.amount,0);
+    const inflow=incomes.reduce((s,e)=>s+e.amount,0);
     let nextCharge=null;
     if(isNow){
         const td=now.getDate();
         for(const [d,dayEvs] of Object.entries(evs).sort(([a],[b])=>+a-+b)){
             if(+d<td)continue;
-            const ch=dayEvs.filter(e=>e.type!=='income');
-            if(ch.length){nextCharge={...ch[0],day:+d,daysAway:+d-td};break;}
+            const ch=dayEvs.filter(e=>e.type==='sub'||e.type==='bill');
+            if(ch.length){nextCharge={...ch[0],daysAway:+d-td};break;}
         }
     }
     const nLabel=nextCharge?(nextCharge.daysAway===0?'Today':`${nextCharge.daysAway}d`):'—';
     const nName=nextCharge?escapeHtml(nextCharge.name):'all clear';
     const statsEl=document.getElementById('cal-stats');
     if(statsEl)statsEl.innerHTML=`
-        <div class="stat"><div class="stat-label">Charges</div><div class="stat-val">${charges.length}</div><div class="stat-sub">${CAL_MN[_calM].slice(0,3)}</div><div class="stat-bar r"></div></div>
-        <div class="stat"><div class="stat-label">Total Outflow</div><div class="stat-val r">${fmt(outflow)}</div><div class="stat-sub">bills + subs</div><div class="stat-bar r"></div></div>
+        <div class="stat"><div class="stat-label">Charges</div><div class="stat-val">${charges.length}</div><div class="stat-sub">${CAL_MN[_calM].slice(0,3)}${notes.length?` &middot; ${notes.length} reminder${notes.length!==1?'s':''}`:''}</div><div class="stat-bar r"></div></div>
+        <div class="stat"><div class="stat-label">Total Outflow</div><div class="stat-val r">${fmt(outflow)}</div><div class="stat-sub">bills + subs + debts</div><div class="stat-bar r"></div></div>
         <div class="stat"><div class="stat-label">Paydays</div><div class="stat-val g">${incomes.length}</div><div class="stat-sub">${inflow?fmt(inflow)+' in':'no income set'}</div><div class="stat-bar g"></div></div>
         <div class="stat"><div class="stat-label">Next Charge</div><div class="stat-val ${nextCharge?'am':''}">${nLabel}</div><div class="stat-sub">${nName}</div><div class="stat-bar ${nextCharge?'o':'g'}"></div></div>`;
 
@@ -133,44 +142,28 @@ function cal_draw(){
         const dayEvs=evs[day]||[];
         c.onclick=(()=>{const d=day,e=dayEvs;return()=>cal_day_select(d,e,true);})();
         let h=`<div class="cal-dn">${day}</div>`;
-        dayEvs.slice(0,2).forEach(ev=>{h+=`<div class="cal-pill ${ev.type}" title="${escapeHtml(ev.name)}: ${fmt(ev.amount)}">${escapeHtml(ev.name)}</div>`;});
+        dayEvs.slice(0,2).forEach(ev=>{h+=`<div class="cal-pill ${ev.type}" title="${escapeHtml(ev.name)}${ev.amount?': '+fmt(ev.amount):''}">${escapeHtml(ev.name)}</div>`;});
         if(dayEvs.length>2)h+=`<div style="font-size:8px;color:var(--muted);font-family:var(--fm);margin-top:1px">+${dayEvs.length-2} more</div>`;
         c.innerHTML=h;grid.appendChild(c);
     }
 
-    const tl=[];
-    (calData.subscriptions||[]).filter(s=>s.active&&s.next_due).forEach(s=>{
-        const dt=new Date(s.next_due+'T00:00:00');
-        if(dt.getFullYear()===_calY&&dt.getMonth()===_calM)tl.push({day:dt.getDate(),name:s.name,type:'sub',amount:s.amount});
-    });
-    (calData.bills||[]).forEach(b=>{
-        if(b.due_day>=1&&b.due_day<=dim)tl.push({day:b.due_day,name:b.name,type:'bill',amount:b.amount});
-    });
-    (calData.sources||[]).forEach(inc=>{
-        if(!inc.last_paid)return;
-        const gap={weekly:7,biweekly:14,semimonthly:15,monthly:30,annual:365}[inc.frequency]||14;
-        let dt=new Date(inc.last_paid+'T00:00:00');
-        while(dt<new Date(_calY,_calM,1))dt.setDate(dt.getDate()+gap);
-        while(dt.getMonth()===_calM&&dt.getFullYear()===_calY){
-            tl.push({day:dt.getDate(),name:inc.name,type:'income',amount:parseFloat(inc.net||0)});
-            dt.setDate(dt.getDate()+gap);
-        }
-    });
-    tl.sort((a,b)=>a.day===b.day?(a.type==='income'?-1:1):a.day-b.day);
-
+    const tl=monthEvs.slice().sort((a,b)=>a.day===b.day?(a.type==='income'?-1:1):a.day-b.day);
     const td_=isNow?now.getDate():-1;
     const upcoming=tl.filter(t=>t.day>=td_);
     const badge=document.getElementById('cal-tl-badge');
     if(badge)badge.textContent=`${upcoming.length} upcoming`;
 
     const tlEl=document.getElementById('cal-tl');if(!tlEl)return;
-    if(!tl.length){tlEl.innerHTML=`<div class="empty"><div class="ei">&#x1F4C5;</div><p class="ep">No charges this month.</p></div>`;return;}
+    if(!tl.length){tlEl.innerHTML=`<div class="empty"><div class="ei">&#x1F4C5;</div><p class="ep">Nothing scheduled this month.</p></div>`;if(_calSel!==null)cal_day_select(_calSel,evs[_calSel]||[]);return;}
 
     function tlItem(t){
         const isPast=t.day<td_,isToday=t.day===td_;
-        const dotC=t.type==='income'?'var(--green)':t.type==='sub'?'var(--red)':'var(--amber)';
-        const amtCls=t.type==='income'?'g':t.type==='sub'?'r':'am';
-        const sign=t.type==='income'?'+':'-';
+        const dotC=t.type==='income'?'var(--green)':t.type==='sub'?'var(--red)':t.type==='bill'?'var(--amber)':'var(--blue)';
+        const amtCls=t.type==='income'?'g':t.type==='note'?'':'r';
+        const sign=t.type==='income'?'+':t.type==='note'?'':'-';
+        const badgeCls=t.type==='sub'?'br-b':t.type==='income'?'bg':'ba';
+        const badgeLbl=t.type==='note'?t.kind:t.type;
+        const amtCell=t.amount?`<div class="mono ${amtCls}" style="font-size:14px;font-weight:700;flex-shrink:0">${sign}${fmt(t.amount)}</div>`:'';
         return`<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);opacity:${isPast?.42:1}">
             <div style="width:36px;text-align:center;flex-shrink:0">
                 <div style="font-family:var(--fm);font-size:19px;font-weight:700;color:${isToday?'var(--amber)':'var(--bright)'};line-height:1.1">${t.day}</div>
@@ -179,9 +172,9 @@ function cal_draw(){
             <div style="width:8px;height:8px;border-radius:50%;background:${dotC};flex-shrink:0"></div>
             <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;color:var(--bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t.name)}</div>
-                <span class="badge ${t.type==='sub'?'br-b':t.type==='income'?'bg':'ba'}">${t.type}</span>
+                <span class="badge ${badgeCls}">${escapeHtml(badgeLbl)}</span>
             </div>
-            <div class="mono ${amtCls}" style="font-size:14px;font-weight:700;flex-shrink:0">${sign}${fmt(t.amount)}</div>
+            ${amtCell}
         </div>`;
     }
 
@@ -203,19 +196,20 @@ function cal_day_select(day,dayEvs,fromClick){
     document.querySelectorAll('#cal-grid .cal-cell').forEach(c=>{
         c.classList.toggle('sel',+c.getAttribute('data-day')===day);
     });
-    const charges=dayEvs.filter(e=>e.type!=='income');
+    const charges=dayEvs.filter(e=>e.type==='sub'||e.type==='bill');
     const incomes=dayEvs.filter(e=>e.type==='income');
-    const totalOut=charges.reduce((s,e)=>s+parseFloat(e.amount),0);
-    const totalIn=incomes.reduce((s,e)=>s+parseFloat(e.amount),0);
+    const totalOut=charges.reduce((s,e)=>s+e.amount,0);
+    const totalIn=incomes.reduce((s,e)=>s+e.amount,0);
     const evHtml=dayEvs.map(ev=>{
-        const col=ev.type==='income'?'var(--green)':ev.type==='sub'?'var(--red)':'var(--amber)';
-        const sign=ev.type==='income'?'+':'-';
+        const col=ev.type==='income'?'var(--green)':ev.type==='sub'?'var(--red)':ev.type==='bill'?'var(--amber)':'var(--blue)';
+        const sign=ev.type==='income'?'+':ev.type==='note'?'':'-';
+        const amt=ev.amount?`<div class="mono" style="color:${col};font-weight:700;font-size:14px;flex-shrink:0">${sign}${fmt(ev.amount)}</div>`:'';
         return`<div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;border-left:3px solid ${col};margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-                <div style="font-size:13px;font-weight:600;color:var(--bright);overflow:hidden;text-overflow:ellipsis;flex:1">${escapeHtml(ev.name)}</div>
-                <div class="mono" style="color:${col};font-weight:700;font-size:14px;flex-shrink:0">${sign}${fmt(ev.amount)}</div>
+                <div style="font-size:13px;font-weight:600;color:var(--bright);overflow:hidden;text-overflow:ellipsis;flex:1">${ev.icon?ev.icon+' ':''}${escapeHtml(ev.name)}</div>
+                ${amt}
             </div>
-            <div style="font-size:10px;color:var(--dim);margin-top:3px;font-family:var(--fm);text-transform:uppercase;letter-spacing:.8px">${ev.type}</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:3px;font-family:var(--fm);text-transform:uppercase;letter-spacing:.8px">${escapeHtml(ev.mod||ev.kind||ev.type)}</div>
         </div>`;
     }).join('');
     const totals=dayEvs.length>1?`<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px">

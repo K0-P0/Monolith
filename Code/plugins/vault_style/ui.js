@@ -494,6 +494,14 @@ body::after {
                 </div>
                 <div id="vs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:4px"></div>
             </div>
+            <div class="card">
+                <div class="card-hd"><span class="card-title">Background Pattern</span></div>
+                <div style="font-size:12px;color:var(--dim);margin-bottom:12px">
+                    A subtle pattern drawn behind your vault — like the login screen's grid.
+                    It follows your palette's colors. Off for a clean solid background.
+                </div>
+                <div id="vs-bg-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px"></div>
+            </div>
         `;
         if (!div.parentNode) document.getElementById('content').appendChild(div);
 
@@ -579,6 +587,8 @@ body::after {
                 </div>`;
         }
 
+        vs_renderBg();
+
         const grid = document.getElementById('vs-grid');
         if (!grid) return;
         grid.innerHTML = Object.entries(PALETTES).map(([id, p]) => `
@@ -623,6 +633,33 @@ body::after {
         } catch (e) {
             toast(e.message, 'er');
         }
+    };
+
+    function vs_renderBg() {
+        const el = document.getElementById('vs-bg-grid');
+        if (!el) return;
+        const cur = (ME.prefs && ME.prefs.background) || 'squares';
+        const opts = [
+            ['squares',   'Squares'],
+            ['triangles', 'Triangles'],
+            ['hexagons',  'Hexagons'],
+            ['off',       'Off'],
+        ];
+        el.innerHTML = opts.map(([id, label]) => `
+            <div onclick="vs_setBg('${id}')" style="cursor:pointer;border:2px solid ${cur === id ? 'var(--amber)' : 'var(--line2)'};border-radius:var(--r2);overflow:hidden;background:var(--bg)">
+                <div class="${id === 'off' ? '' : 'bg-' + id}" style="height:56px;${id === 'off' ? 'display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px;font-family:var(--fm);letter-spacing:2px' : ''}">${id === 'off' ? 'SOLID' : ''}</div>
+                <div style="padding:7px 9px;font-size:12px;font-weight:600;color:${cur === id ? 'var(--amber)' : 'var(--ghost)'};border-top:1px solid var(--line)">${label}${cur === id ? ' &#x2713;' : ''}</div>
+            </div>`).join('');
+    }
+
+    window.vs_setBg = async function (name) {
+        try {
+            const r = await api('POST', '/api/user/prefs', { background: name });
+            ME.prefs = r.prefs || { background: name };
+            applyBackground(name);
+            vs_renderBg();
+            toast('Background updated', 'ok');
+        } catch (e) { toast(e.message, 'er'); }
     };
 
     window.dashWidget_vault_style = function () {

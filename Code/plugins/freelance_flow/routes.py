@@ -1,4 +1,4 @@
-from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body
+from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body, safe_float
 from flask import Blueprint, jsonify, request, session
 
 MOD_ID = "freelance_flow"
@@ -74,3 +74,43 @@ def mark_paid(rid):
             job["status"] = "Paid" if amt >= _num(job.get("quote_amount")) else "Partial"
             _save(uid, jobs); return jsonify(job)
     return jsonify({"error": "not found"}), 404
+
+def bridge_income(uid):
+    month_key = today()[:7]
+    out = []
+    for job in _load(uid):
+        if not str(job.get("paid_date", "")).startswith(month_key):
+            continue
+        net = _net(job)
+        if net <= 0:
+            continue
+        out.append({
+            "name":      job.get("title") or job.get("client") or "Freelance",
+            "net":       net,
+            "gross":     safe_float(job.get("amount_received")),
+            "monthly":   net,
+            "frequency": "one_time",
+            "type":      "supplemental",
+            "date":      job.get("paid_date", ""),
+        })
+    return out
+
+def bridge_events(uid, year, month):
+    prefix = f"{year:04d}-{month:02d}"
+    out = []
+    for job in _load(uid):
+        if job.get("status") not in ("Invoiced", "Partial"):
+            continue
+        due = str(job.get("due_date", ""))
+        if not due.startswith(prefix):
+            continue
+        remaining = max(0.0, safe_float(job.get("quote_amount")) - safe_float(job.get("amount_received")))
+        out.append({
+            "date":   due,
+            "label":  f"Invoice due — {job.get('title', 'Job')}",
+            "amount": round(remaining, 2),
+            "type":   "deadline",
+            "color":  "#5ab4ff",
+            "icon":   "🧾",
+        })
+    return out

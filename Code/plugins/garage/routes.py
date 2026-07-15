@@ -108,3 +108,20 @@ def delete_service(vid, sid):
     v["logs"] = [l for l in v["logs"] if l["id"] != sid]
     v["updated"] = today()
     _save(uid, data); return jsonify({"ok": True})
+
+def _display_name(v):
+    return v.get("nickname") or " ".join(
+        str(p) for p in (v.get("year") or "", v.get("make", ""), v.get("model", "")) if p
+    ).strip() or "Vehicle"
+
+def bridge_events(uid, year, month):
+    prefix = f"{year:04d}-{month:02d}"
+    return [{
+        "date":   v["registration_due"],
+        "label":  f"{_display_name(v)} — Registration renewal",
+        "amount": 0,
+        "type":   "reminder",
+        "color":  "#fb923c",
+        "icon":   "📄",
+    } for v in _load(uid)["vehicles"]
+        if str(v.get("registration_due", "")).startswith(prefix)]

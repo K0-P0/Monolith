@@ -1,69 +1,55 @@
-from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body
-from flask import Blueprint, jsonify, request, session
+from flask import jsonify, session
+from vault_core import (crud_blueprint, load_mod_data, save_mod_data,
+                        mod_auth, json_body, safe_float)
 
 MOD_ID = "savings"
-blueprint = Blueprint(MOD_ID, __name__)
 
-def _d(uid): return load_mod_data(uid, MOD_ID).get("items", [])
-def _s(uid, v): save_mod_data(uid, MOD_ID, {"items": v})
+blueprint = crud_blueprint(MOD_ID, fields={
+    "name":               ("str",   ""),
+    "savings_type":       ("str",   "goal"),
+    "target":             ("float", 0.0),
+    "current":            ("float", 0.0),
+    "monthly_contrib":    ("float", 0.0),
+    "employer_match_pct": ("float", 0.0),
+    "annual_limit":       ("float", 0.0),
+    "ytd_contrib":        ("float", 0.0),
+    "target_date":        ("str",   ""),
+    "notes":              ("str",   ""),
+}, required=("name", "target"))
 
-@blueprint.route("/", methods=["GET"])
-@mod_auth(MOD_ID)
-def get_all():
-    return jsonify(_d(session['uid']))
-
-@blueprint.route("/", methods=["POST"])
-@mod_auth(MOD_ID)
-def add():
-    r = json_body(); uid = session['uid']
-    if not r.get("name", "").strip() or not r.get("target"):
-        return jsonify({"error": "name and target required"}), 400
-    rec = {
-        "id":                 new_id(),
-        "name":               r["name"].strip(),
-        "savings_type":       r.get("savings_type", "goal"),
-        "target":             float(r.get("target", 0)),
-        "current":            float(r.get("current", 0)),
-        "monthly_contrib":    float(r.get("monthly_contrib", 0)),
-        "employer_match_pct": float(r.get("employer_match_pct", 0)),
-        "annual_limit":       float(r.get("annual_limit", 0)),
-        "ytd_contrib":        float(r.get("ytd_contrib", 0)),
-        "target_date":        r.get("target_date", ""),
-        "notes":              r.get("notes", "").strip(),
-        "created":            today(),
-    }
-    items = _d(uid); items.append(rec); _s(uid, items)
-    return jsonify(rec), 201
-
-@blueprint.route("/<rid>", methods=["PUT"])
-@mod_auth(MOD_ID)
-def update(rid):
-    r = json_body(); uid = session['uid']; items = _d(uid)
-    for item in items:
-        if item["id"] == rid:
-            for k in ["name", "savings_type", "target_date", "notes"]:
-                if k in r: item[k] = r[k].strip() if isinstance(r[k], str) else r[k]
-            for k in ["target", "current", "monthly_contrib", "employer_match_pct", "annual_limit", "ytd_contrib"]:
-                if k in r: item[k] = float(r[k])
-            _s(uid, items); return jsonify(item)
-    return jsonify({"error": "not found"}), 404
-
-@blueprint.route("/<rid>", methods=["DELETE"])
-@mod_auth(MOD_ID)
-def delete(rid):
-    uid = session['uid']
-    _s(uid, [i for i in _d(uid) if i["id"] != rid])
-    return jsonify({"ok": True})
+def _items(uid):
+    return load_mod_data(uid, MOD_ID).get("items", [])
 
 @blueprint.route("/<rid>/add", methods=["POST"])
 @mod_auth(MOD_ID)
 def add_balance(rid):
-    r = json_body(); uid = session['uid']; items = _d(uid)
-    amount = float(r.get("amount", 0))
+    r = json_body(); uid = session["uid"]; items = _items(uid)
+    amount = safe_float(r.get("amount"))
     for item in items:
         if item["id"] == rid:
-            item["current"] = round(max(0.0, float(item.get("current", 0)) + amount), 2)
+            item["current"] = round(max(0.0, safe_float(item.get("current")) + amount), 2)
             if amount > 0 and r.get("add_ytd", False):
-                item["ytd_contrib"] = round(float(item.get("ytd_contrib", 0)) + amount, 2)
-            _s(uid, items); return jsonify(item)
+                item["ytd_contrib"] = round(safe_float(item.get("ytd_contrib")) + amount, 2)
+            save_mod_data(uid, MOD_ID, {"items": items})
+            return jsonify(item)
     return jsonify({"error": "not found"}), 404
+
+def bridge_events(uid, year, month):
+    prefix = f"{year:04d}-{month:02d}"
+    return [{
+        "date":   g["target_date"],
+        "label":  f"Goal target — {g.get('name', '')}",
+        "amount": safe_float(g.get("target")),
+        "type":   "deadline",
+        "color":  "#5ab4ff",
+        "icon":   "🏦",
+    } for g in _items(uid) if str(g.get("target_date", "")).startswith(prefix)]
+
+def bridge_balances(uid):
+    return [{
+        "kind":            "savings",
+        "name":            g.get("name", ""),
+        "amount":          safe_float(g.get("current")),
+        "monthly_contrib": safe_float(g.get("monthly_contrib")),
+        "category":        g.get("savings_type", "goal"),
+    } for g in _items(uid)]

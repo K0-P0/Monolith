@@ -138,6 +138,12 @@
                             </div>
                             ${u.id !== ME.id ? `
                                 <div class="ra">
+                                    <button class="btn btn-g btn-xs"
+                                            data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.username)}"
+                                            onclick="adm_setAdmin(this.dataset.uid, this.dataset.uname, ${u.is_admin ? 'false' : 'true'})"
+                                            title="${u.is_admin ? 'Remove Admin' : 'Make Admin'}">
+                                        &#x1F451;
+                                    </button>
                                     <button class="btn ${u.totp_configured ? 'btn-ok' : 'btn-g'} btn-xs"
                                             data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.username)}"
                                             onclick="adm_resetTotp(this.dataset.uid, this.dataset.uname)"
@@ -158,7 +164,7 @@
                                 </div>` : ''}
                         </div>`).join('')}
                 </div>
-                <div style="text-align:center;font-size:11px;color:var(--dim);padding:2px 0 10px">Monolith v${escapeHtml(String(ver.version))}</div>`;
+                <div style="text-align:center;font-size:11px;color:var(--dim);padding:2px 0 10px">Monolith ${escapeHtml(String(ver.version))}</div>`;
         } catch (e) {
             el.innerHTML = `<div class="alert al-d">${e.message}</div>`;
         }
@@ -170,6 +176,18 @@
             toast(r.message, allow ? 'ok' : 'wn');
             const reTab = g('tab-re');
             if (reTab) reTab.style.display = allow ? '' : 'none';
+            adm_loadUsers();
+        } catch (e) { toast(e.message, 'er'); }
+    };
+
+    window.adm_setAdmin = async function (uid, username, make) {
+        const msg = make
+            ? `Make ${username} an admin? They will be able to manage every user and global mods.`
+            : `Remove admin rights from ${username}?`;
+        if (!confirm(msg)) return;
+        try {
+            const r = await api('POST', `/api/admin/users/${uid}/admin`, { is_admin: make });
+            toast(r.message, 'ok');
             adm_loadUsers();
         } catch (e) { toast(e.message, 'er'); }
     };

@@ -212,6 +212,14 @@ input[type="file"]{height:auto;padding:8px;font-size:12px;cursor:pointer}
 @media(prefers-reduced-motion:no-preference){.page.active{animation:pgin .22s ease}}
 #auth-screen::before,#totp-screen::before,#setup-screen::before,#backup-screen::before,#onboard-screen::before{content:'';position:absolute;inset:0;z-index:-1;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:44px 44px;opacity:.35;-webkit-mask-image:radial-gradient(ellipse at center,#000 25%,transparent 75%);mask-image:radial-gradient(ellipse at center,#000 25%,transparent 75%)}
 #auth-screen::after{content:'';position:absolute;inset:0;z-index:-1;background:radial-gradient(640px 420px at 50% 42%,var(--amber-bg),transparent 70%)}
+body{background:none}
+#bg-layer{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.bg-squares{background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:44px 44px}
+.bg-triangles{background-image:repeating-linear-gradient(0deg,var(--line) 0 1px,transparent 1px 38px),repeating-linear-gradient(60deg,var(--line) 0 1px,transparent 1px 38px),repeating-linear-gradient(-60deg,var(--line) 0 1px,transparent 1px 38px)}
+.bg-hexagons{background-color:var(--line);-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34.64' height='60'%3E%3Cpath d='M17.32 0L34.64 10V30L17.32 40 0 30V10ZM17.32 40V60' fill='none' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34.64' height='60'%3E%3Cpath d='M17.32 0L34.64 10V30L17.32 40 0 30V10ZM17.32 40V60' fill='none' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E");-webkit-mask-size:34.64px 60px;mask-size:34.64px 60px}
+#bg-layer.bg-squares{opacity:.45}
+#bg-layer.bg-triangles{opacity:.3}
+#bg-layer.bg-hexagons{opacity:.5}
 input:focus,select:focus{box-shadow:0 0 0 3px var(--amber-bg)}
 .totp-inp:focus{box-shadow:0 0 0 4px var(--amber-bg)}
 @media(prefers-reduced-motion:no-preference){
@@ -244,6 +252,8 @@ input:focus,select:focus{box-shadow:0 0 0 3px var(--amber-bg)}
 </style>
 </head>
 <body>
+
+<div id="bg-layer"></div>
 
 <div id="auth-screen">
   <div class="auth-card">
@@ -641,6 +651,9 @@ async function doTotpSetup() {
 function totpErr(msg) { const e = g('totp-err'); if (e) { e.textContent = msg; e.classList.add('show'); } }
 function setupErr(msg) { const e = g('setup-err'); if (e) { e.textContent = msg; e.classList.add('show'); } }
 
+const BG_OPTS=['off','squares','triangles','hexagons'];
+function applyBackground(name){const el=g('bg-layer');if(!el)return;if(!BG_OPTS.includes(name))name='squares';el.className=name==='off'?'':('bg-'+name);}
+
 async function bootApp(me){
   ME=me;
   g('auth-screen').style.display='none';
@@ -662,6 +675,7 @@ async function _launchApp(){
 }
 
 async function _showMainApp(){
+  applyBackground((ME.prefs&&ME.prefs.background)||'squares');
   g('app').style.display='flex';
   g('tb-un').textContent=ME.username;
   g('tb-av').textContent=ME.username[0].toUpperCase();
@@ -687,19 +701,52 @@ async function submitOnboarding(skip){
   }
 }
 
-const TOUR_STEPS=[
-  {sel:null,   title:"Welcome to your vault",  body:"This is your dashboard — a live snapshot of your finances. Numbers fill in automatically as you add data to each module.", pos:"center"},
-  {sel:"#sidebar", title:"Your modules live here", body:"Each item in the sidebar is a module. Click one to open it, then fill in your information — paychecks, debts, savings goals, vehicle costs, and more.", pos:"right"},
-  {sel:"button[onclick='openQuickExpense()']", title:"Quick Expense", body:"Tap this from anywhere to log a purchase in seconds. Great for capturing spending on the go before you forget.", pos:"bottom"},
-  {sel:".nav-item[data-page='settings']", title:"My Mods", body:"Enable or disable modules at any time. Disabled modules keep your data safe for 30 days before it's permanently cleared.", pos:"right"},
-  {sel:".nav-item[data-page='reports']", title:"Reports — the deep dive", body:"Once your modules have data, Reports gives you a full picture: income breakdown, expense ratios, financial health grade, savings rate, and debt-to-income — all in one place. It's the most in-depth view of your finances in the vault.", pos:"right"},
-  {sel:".nav-item[data-page='profile']", title:"Your profile", body:"Change your password, manage two-factor authentication, and update your account details here.", pos:"right"},
-  {sel:".nav-item[data-page='settings']", title:"Need a refresher?", body:"My Mods is where you enable and disable modules — and it's also where you'll find the Re-run Tour button any time you want to walk through this again.", pos:"right", last:true},
-];
-let _tourIdx=0;
+const _TOUR_MOD_BLURBS={
+  paycheck_pro:"Enter your gross pay and Paycheck Pro runs the full gross-to-net math — federal and state taxes, 401k, and other deductions. It can import payroll files and project your cashflow forward, and the rest of the vault uses its income numbers, so it's the best module to set up first.",
+  reports:"Once your modules have data, Reports gives you the full picture: income breakdown, expense ratios, financial health grade, savings rate, and debt-to-income — the most in-depth view of your finances in the vault.",
+  freelance_flow:"Track clients, jobs, and invoices from quote to payout. It holds back a tax percentage on every payment so quarterly taxes never sneak up on you, and it keeps business expenses separate from personal spending.",
+  expenses:"Log and categorize daily spending. Quick Expense entries land here, and the category breakdown feeds your dashboard and Reports.",
+  bills:"Recurring monthly bills with due dates and autopay tracking. Everything you enter here shows up in your upcoming feed and on the calendar.",
+  subscriptions:"Track every recurring subscription and its billing cycle — see the true combined monthly cost and spot the ones worth cancelling.",
+  budget:"Set a monthly limit for each spending category, then watch actual spending track against it as you log expenses.",
+  debt_payoff:"List each debt with its balance, minimum payment, and APR. Watch payoff progress over time and keep the summary on your dashboard.",
+  savings:"Savings goals with Roth IRA and 401k support — set targets and watch the progress bars fill as you contribute.",
+  goals:"Big-picture financial goals with target dates. It calculates your pace to goal, so you know whether you're on track long before the deadline.",
+  net_worth:"Log your assets and liabilities to see your total net worth and watch it grow over time.",
+  garage:"Vehicles, service history, insurance details, and registration due dates — everything your vehicles cost you, in one place.",
+  tax_prep:"A year-round tax tracker: deductible expenses, quarterly estimated payments, and everything you'll want in front of you at filing time.",
+  calendar_view:"A visual calendar of upcoming bills, subscriptions, and paydays, pulled automatically from your other modules.",
+  news:"A feed of upcoming money events — bills, subscriptions, and paydays — so nothing catches you off guard.",
+  ot_vault:"Log individual overtime shifts and see the real net take-home for each one after taxes.",
+  bank_sync:"Connect a bank account via SimpleFIN to pull real balances and transactions into the vault."
+};
+let TOUR_STEPS=[];
+function buildTourSteps(){
+  const steps=[
+    {sel:null, title:"Welcome to your vault", body:"This is your dashboard — a live snapshot of your finances. Numbers fill in automatically as you add data to each module.", pos:"center"},
+    {sel:"#sidebar", title:"Your modules live here", body:"Each item in the sidebar is a module. Click one to open it, then fill in your information — paychecks, debts, savings goals, vehicle costs, and more.", pos:"right"},
+    {sel:"button[onclick='openQuickExpense()']", msel:".tab-add", title:"Quick Expense", body:"Tap this from anywhere to log a purchase in seconds. Great for capturing spending on the go before you forget.", pos:"bottom"},
+    {sel:".nav-item[data-page='settings']", title:"My Mods", body:"Enable or disable modules at any time. Disabled modules keep your data safe for 30 days before it's permanently cleared.", pos:"right"}
+  ];
+  document.querySelectorAll("#nav-dynamic .nav-item[data-page]").forEach(el=>{
+    const id=el.dataset.page;
+    const m=MODS.find(x=>x.id===id);
+    const body=_TOUR_MOD_BLURBS[id]||(m&&m.description)||'';
+    if(!m||!body)return;
+    steps.push({sel:`.nav-item[data-page='${id}']`, title:m.name, body, pos:"right"});
+  });
+  steps.push({sel:".nav-item[data-page='profile']", title:"Your profile", body:"Change your password, manage two-factor authentication, and update your account details here.", pos:"right"});
+  steps.push({sel:".nav-item[data-page='settings']", title:"Need a refresher?", body:"My Mods is where you enable and disable modules — and it's also where you'll find the Re-run Tour button any time you want to walk through this again.", pos:"right", last:true});
+  return steps;
+}
+let _tourIdx=0,_tourSbWasCollapsed=false,_tourSeq=0;
 
 function startTour(){
+  TOUR_STEPS=buildTourSteps();
   _tourIdx=0;
+  const sb=g('sidebar');
+  _tourSbWasCollapsed=window.innerWidth>768&&sb.classList.contains('collapsed');
+  if(_tourSbWasCollapsed)sb.classList.remove('collapsed');
   g('tour-blocker').style.display='';
   g('tour-card').style.display='';
   _tourRender(0);
@@ -707,31 +754,57 @@ function startTour(){
 
 function _tourRender(idx){
   const step=TOUR_STEPS[idx];
-  const hl=g('tour-highlight');
   const card=g('tour-card');
+  const mob=window.innerWidth<=768;
+  const seq=++_tourSeq;
   g('tour-step-num').textContent=`Step ${idx+1} of ${TOUR_STEPS.length}`;
   g('tour-title').textContent=step.title;
   g('tour-body').textContent=step.body;
   g('tour-prev').style.visibility=idx===0?'hidden':'';
   g('tour-next').textContent=step.last?'Done ✓':'Next →';
 
-  card.style.transform='';
-  if(!step.sel){
-    hl.style.display='none';
-    card.style.left='50%';card.style.top='50%';card.style.transform='translate(-50%,-50%)';
-    return;
+  card.style.transform='';card.style.bottom='';card.style.width='300px';
+  const sel=(mob&&step.msel)?step.msel:step.sel;
+  const el=sel?document.querySelector(sel):null;
+  if(mob){
+    const sb=g('sidebar');
+    const inSb=!!(el&&el.closest('#sidebar'));
+    const wasOpen=sb.classList.contains('open');
+    sb.classList.toggle('open',inSb);
+    if(inSb!==wasOpen){
+      g('tour-highlight').style.display='none';
+      setTimeout(()=>{if(seq===_tourSeq)_tourPlace(step,el,mob);},250);
+      return;
+    }
   }
-  const el=document.querySelector(step.sel);
+  _tourPlace(step,el,mob);
+}
+
+function _tourPlace(step,el,mob){
+  const hl=g('tour-highlight');
+  const card=g('tour-card');
+  const vw=window.innerWidth,vh=window.innerHeight;
   if(!el){
     hl.style.display='none';
+    if(mob)card.style.width=Math.min(300,vw-24)+'px';
     card.style.left='50%';card.style.top='50%';card.style.transform='translate(-50%,-50%)';
     return;
   }
+  el.scrollIntoView({block:'nearest'});
   const r=el.getBoundingClientRect();
-  const P=8,GAP=14,CW=300,vw=window.innerWidth,vh=window.innerHeight;
+  const P=8,GAP=14;
   hl.style.display='';
   hl.style.top=(r.top-P)+'px';hl.style.left=(r.left-P)+'px';
   hl.style.width=(r.width+P*2)+'px';hl.style.height=(r.height+P*2)+'px';
+  if(mob){
+    const CW=Math.min(300,vw-24);
+    card.style.width=CW+'px';
+    card.style.left=Math.round((vw-CW)/2)+'px';
+    if(r.top+r.height/2<vh*.55){card.style.top='';card.style.bottom='84px';}
+    else{card.style.top='12px';}
+    return;
+  }
+  const CW=300;
   if(step.pos==='right'){
     card.style.left=Math.min(r.right+P+GAP,vw-CW-8)+'px';
     card.style.top=Math.max(8,Math.min(r.top,vh-240))+'px';
@@ -748,9 +821,12 @@ function tourNext(){if(_tourIdx>=TOUR_STEPS.length-1){_tourEnd();return;}_tourId
 function tourPrev(){if(_tourIdx<=0)return;_tourIdx--;_tourRender(_tourIdx);}
 function tourSkip(){_tourEnd();}
 function _tourEnd(){
+  _tourSeq++;
   g('tour-blocker').style.display='none';
   g('tour-highlight').style.display='none';
   g('tour-card').style.display='none';
+  if(window.innerWidth<=768)g('sidebar').classList.remove('open');
+  if(_tourSbWasCollapsed){g('sidebar').classList.add('collapsed');_tourSbWasCollapsed=false;}
   api('POST','/api/user/tour-seen').catch(()=>{});
 }
 async function resetTour(){
@@ -816,10 +892,6 @@ function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[
 function dp(id){const el=g(id);if(!el)return;try{el.showPicker();}catch(e){el.click();}}
 const CC={'Food & Dining':'#f5a623','Transport / Gas':'#5ab4ff','Shopping':'#e05252','Entertainment':'#a87cff','Health / Medical':'#38c872','Personal Care':'#3ad8d8','Home':'#f0a000','Tech / Electronics':'#60a5fa','Tools / Hardware':'#a78bfa','Pet Care':'#4ade80','Housing':'#f87171','Utilities':'#fb923c','Insurance':'#fbbf24','Other':'#5e7080','Internet / Phone':'#34d399','Music':'#c084fc','Cloud / Storage':'#38bdf8','Software':'#818cf8','Gaming':'#fb7185','Health':'#4ade80','News':'#94a3b8','Food':'#fdba74'};
 function cc(c){return CC[c]||'#5e7080';}
-function netInc(i){return parseFloat(i.net||i.net_direct||0);}
-function totalMoInc(){return(DB.paycheck_pro||[]).reduce((s,i)=>s+toMo(netInc(i),i.frequency),0);}
-function totalMoSubs(){return(DB.subscriptions||[]).filter(s=>s.active).reduce((s,x)=>s+toMoSub(x.amount,x.cycle),0);}
-function totalMoBills(){return(DB.bills||[]).reduce((s,b)=>s+parseFloat(b.amount),0);}
 function thisMoExp(){const mk=cmk();return(DB.expenses||[]).filter(e=>e.date&&e.date.startsWith(mk));}
 
 let _dashLayout = null;
@@ -958,44 +1030,31 @@ async function renderDashboard(){
   const custBtn = g('dash-cust-btn');
   if(custBtn) custBtn.style.display='';
 
-  const pOn =isOn('paycheck_pro'), sOn=isOn('subscriptions'), bOn=isOn('bills'),
-        eOn =isOn('expenses'),     savOn=isOn('savings'),      qOn=isOn('quick_math'),
-        dOn =isOn('debt_payoff');
+  const pOn=isOn('paycheck_pro'), eOn=isOn('expenses'), savOn=isOn('savings'), qOn=isOn('quick_math'), dOn=isOn('debt_payoff');
 
-  if(pOn)   await loadMod('paycheck_pro');
-  if(sOn)   await loadMod('subscriptions');
-  if(bOn)   await loadMod('bills');
-  if(eOn)   await loadMod('expenses');
-  if(savOn) await loadMod('savings');
-  if(dOn)   await loadMod('debt_payoff');
-  if(qOn)   await loadModUI('quick_math');
+  let S=null;
+  try{S=await api('GET','/api/bridge/summary');}catch(e){}
+  if(!S)S={income:{monthly_total:0,sources:[],by_type:{}},expense:{monthly_total:0,fixed_total:0,variable_total:0,items:[],by_category:{},by_mod:{}},health:{score:0,grade:'F',net:0,savings_rate_pct:0,expense_ratio_pct:0,debt_to_income:0,total_debt:0,monthly_income:0,monthly_expenses:0,insights:[]},balances:{savings_total:0,savings_monthly_contrib:0,savings_count:0,debt_total:0},upcoming:[]};
 
-  const subs=sOn?totalMoSubs():0, bills=bOn?totalMoBills():0;
-  let basePay=0;
-  if(pOn){
-    if(!_loadedUIs.has('paycheck_pro')) await loadModUI('paycheck_pro');
-    const ppFn=window['paycheck_pro_get_monthly_total'];
-    basePay=typeof ppFn==='function'?(parseFloat(ppFn())||0):totalMoInc();
-  }
-  let suppIncome=0;
-  for(const mod of MODS.filter(m=>m.globally_enabled&&m.user_enabled&&m.id!=='paycheck_pro')){
-    if(!_loadedUIs.has(mod.id)) await loadModUI(mod.id);
-    const fn=window[`${mod.id}_get_monthly_total`];
-    if(typeof fn==='function'){if(!DB[mod.id])await loadMod(mod.id);suppIncome+=parseFloat(fn())||0;}
-  }
-  const income    = basePay+suppIncome;
-  const fixed     = subs+bills;
-  const expTot    = eOn?thisMoExp().reduce((s,e)=>s+parseFloat(e.amount),0):0;
-  const net       = income-fixed-expTot;
-  const savCon    = savOn?(DB.savings||[]).reduce((s,x)=>s+parseFloat(x.monthly_contrib||0),0):0;
-  const totalSaved= savOn?(DB.savings||[]).reduce((s,x)=>s+parseFloat(x.current||0),0):0;
-  const totalDebt = dOn?(DB.debt_payoff||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0):0;
+  if(eOn)  await loadMod('expenses');
+  if(qOn)  await loadModUI('quick_math');
+
+  const income    = S.income.monthly_total;
+  const basePay   = S.income.by_type.primary||0;
+  const suppIncome= S.income.by_type.supplemental||0;
+  const fixed     = S.expense.fixed_total;
+  const expTot    = S.expense.variable_total;
+  const net       = S.health.net;
+  const savCon    = S.balances.savings_monthly_contrib;
+  const totalSaved= S.balances.savings_total;
+  const totalDebt = S.balances.debt_total;
+  const srcCount  = S.income.sources.filter(s=>s.type==='primary'&&s.frequency!=='actual').length;
+  const modName   = id=>{const m=MODS.find(x=>x.id===id);return m?m.name:id;};
 
   const alerts=[];
-  getUpcoming(7).filter(u=>u.days<=3).forEach(u=>{
-    const cls=u.days<0?'al-d':'al-w';
-    const msg=u.days<0?`"${u.name}" past due!`:u.days===0?`"${u.name}" due TODAY — ${fmt(u.amount)}`:`"${u.name}" due in ${u.days}d — ${fmt(u.amount)}`;
-    alerts.push(`<div class="alert ${cls}">${msg}</div>`);
+  S.upcoming.filter(u=>u.days<=3&&u.type==='payment').forEach(u=>{
+    const msg=u.days===0?`"${escapeHtml(u.label)}" due TODAY — ${fmt(u.amount)}`:`"${escapeHtml(u.label)}" due in ${u.days}d — ${fmt(u.amount)}`;
+    alerts.push(`<div class="alert al-w">${msg}</div>`);
   });
   if(income>0&&net<0)alerts.push(`<div class="alert al-d">You are ${fmt(Math.abs(net))} over budget this month.</div>`);
   MODS.filter(m=>!m.user_enabled&&m.days_until_deletion!==null).forEach(m=>{alerts.push(`<div class="alert al-w">&#x1F9E9; "${m.name}" data deletes in ${m.days_until_deletion}d — re-enable in My Mods.</div>`);});
@@ -1013,67 +1072,66 @@ async function renderDashboard(){
 
   if(show.stats!==false){
     const si=[];
-    if(pOn)si.push(`<div class="stat"><div class="stat-label">Monthly Take-Home</div><div class="stat-val g">${fmtK(income)}</div><div class="stat-sub">${(DB.paycheck_pro||[]).length} source${(DB.paycheck_pro||[]).length!==1?'s':''}</div><div class="stat-bar g"></div></div>`);
-    if(sOn||bOn)si.push(`<div class="stat"><div class="stat-label">Fixed Costs</div><div class="stat-val r">${fmtK(fixed)}</div><div class="stat-sub">Subs + Bills</div><div class="stat-bar r"></div></div>`);
+    if(pOn||income>0)si.push(`<div class="stat"><div class="stat-label">Monthly Take-Home</div><div class="stat-val g">${fmtK(income)}</div><div class="stat-sub">${srcCount} source${srcCount!==1?'s':''}</div><div class="stat-bar g"></div></div>`);
+    if(fixed>0)si.push(`<div class="stat"><div class="stat-label">Fixed Costs</div><div class="stat-val r">${fmtK(fixed)}</div><div class="stat-sub">recurring + minimums</div><div class="stat-bar r"></div></div>`);
     if(eOn){
       const _days={};thisMoExp().forEach(e=>{_days[e.date]=(_days[e.date]||0)+parseFloat(e.amount||0);});
       let _run=0;const _vals=Object.keys(_days).sort().map(k=>(_run+=_days[k]));
       const _spark=_vals.length>1?`<div style="margin-top:6px">${svgSpark(_vals,{w:110,h:20,color:'var(--amber)'})}</div>`:'';
       si.push(`<div class="stat"><div class="stat-label">Expenses This Mo.</div><div class="stat-val">${fmtK(expTot)}</div><div class="stat-sub">${thisMoExp().length} transactions</div>${_spark}<div class="stat-bar"></div></div>`);
     }
-    if(pOn)si.push(`<div class="stat"><div class="stat-label">Net Remaining</div><div class="stat-val ${net>=0?'g':'r'}">${fmtK(net)}</div><div class="stat-sub">${net>=0?'Positive':'Deficit'}</div><div class="stat-bar ${net>=0?'g':'r'}"></div></div>`);
-    if(savOn)si.push(`<div class="stat"><div class="stat-label">Savings Rate</div><div class="stat-val b">${income>0?Math.round(savCon/income*100):0}%</div><div class="stat-sub">${fmtK(savCon)}/mo</div><div class="stat-bar b"></div></div>`);
-    if(savOn)si.push(`<div class="stat"><div class="stat-label">Total Saved</div><div class="stat-val">${fmtK(totalSaved)}</div><div class="stat-sub">${(DB.savings||[]).length} goals</div><div class="stat-bar o"></div></div>`);
+    if(pOn||income>0)si.push(`<div class="stat"><div class="stat-label">Net Remaining</div><div class="stat-val ${net>=0?'g':'r'}">${fmtK(net)}</div><div class="stat-sub">${net>=0?'Positive':'Deficit'}</div><div class="stat-bar ${net>=0?'g':'r'}"></div></div>`);
+    if(savOn||S.balances.savings_count>0)si.push(`<div class="stat"><div class="stat-label">Savings Rate</div><div class="stat-val b">${income>0?Math.round(savCon/income*100):0}%</div><div class="stat-sub">${fmtK(savCon)}/mo</div><div class="stat-bar b"></div></div>`);
+    if(savOn||S.balances.savings_count>0)si.push(`<div class="stat"><div class="stat-label">Total Saved</div><div class="stat-val">${fmtK(totalSaved)}</div><div class="stat-sub">${S.balances.savings_count} goals</div><div class="stat-bar o"></div></div>`);
     if(!si.length)si.push(`<div class="stat" style="grid-column:1/-1"><div class="stat-label">No Mods Enabled</div><div class="stat-val dm">—</div><div class="stat-sub">Go to My Mods to enable features</div></div>`);
     parts.push(`<div class="stat-row">${si.join('')}</div>`);
   }
 
   if(show.health!==false&&income>0){
-    const sr=income>0?savCon/income*100:0;
-    const er=income>0?(fixed+expTot)/income*100:100;
-    const dti=(income>0&&dOn)?totalDebt/(income*12)*100:0;
-    const savPts=Math.min(40,sr/20*40);
-    const debtPts=Math.max(0,30-Math.min(30,dti/100*30));
-    const expPts=Math.max(0,30-Math.max(0,(er-70)/30*30));
-    const score=Math.round(savPts+debtPts+expPts);
-    const grade=score>=90?'A':score>=80?'B':score>=70?'C':score>=60?'D':'F';
+    const sr=S.health.savings_rate_pct;
+    const er=S.health.expense_ratio_pct;
+    const dti=S.health.debt_to_income;
+    const score=S.health.score;
+    const grade=S.health.grade;
     const gcol={A:'#38c872',B:'#5ab4ff',C:'#f0a000',D:'#fb923c',F:'#e05252'}[grade]||'var(--ghost)';
     const ratioCells=[
       `<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px"><div style="font-size:9px;color:var(--muted);font-family:var(--fm);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px">Savings Rate</div><div class="mono" style="font-size:15px;color:${sr>=20?'var(--green)':sr>=10?'var(--text)':'var(--red)'}">${sr.toFixed(1)}%</div></div>`,
       `<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px"><div style="font-size:9px;color:var(--muted);font-family:var(--fm);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px">Expense Ratio</div><div class="mono" style="font-size:15px;color:${er<=70?'var(--green)':er<=90?'var(--text)':'var(--red)'}">${er.toFixed(1)}%</div></div>`,
-      dOn?`<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px"><div style="font-size:9px;color:var(--muted);font-family:var(--fm);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px">Debt-to-Income</div><div class="mono" style="font-size:15px;color:${dti<=30?'var(--green)':dti<=50?'var(--text)':'var(--red)'}">${dti.toFixed(1)}%</div></div>`:''
+      (dOn||totalDebt>0)?`<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px"><div style="font-size:9px;color:var(--muted);font-family:var(--fm);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px">Debt-to-Income</div><div class="mono" style="font-size:15px;color:${dti<=30?'var(--green)':dti<=50?'var(--text)':'var(--red)'}">${dti.toFixed(1)}%</div></div>`:''
     ].filter(Boolean).join('');
     parts.push(`<div class="card"><div class="card-hd"><span class="card-title">Financial Health</span></div><div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap"><div style="text-align:center;flex-shrink:0"><div style="font-size:52px;font-weight:900;line-height:1;color:${gcol}">${grade}</div><div style="font-size:10px;color:var(--ghost);margin-top:4px;font-family:var(--fm);letter-spacing:1px">GRADE</div></div><div style="flex:1;min-width:200px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--ghost)">Score</span><span class="mono" style="color:${gcol}">${score}/100</span></div><div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;margin-bottom:14px"><div style="height:6px;background:${gcol};width:${score}%;border-radius:3px"></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">${ratioCells}</div></div></div></div>`);
   }
 
   const pairA=[];
-  if(show.gauge!==false&&pOn)pairA.push(`<div class="card"><div class="card-hd"><span class="card-title">Disposable Income</span></div><div class="gw"><div class="gcw"><canvas id="gauge-c" width="220" height="130"></canvas><div class="gct"><div class="gcv" id="gauge-v">-</div><div class="gcl">left over</div></div></div><div class="gleg" id="gauge-leg"></div></div></div>`);
+  if(show.gauge!==false&&(pOn||income>0))pairA.push(`<div class="card"><div class="card-hd"><span class="card-title">Disposable Income</span></div><div class="gw"><div class="gcw"><canvas id="gauge-c" width="220" height="130"></canvas><div class="gct"><div class="gcv" id="gauge-v">-</div><div class="gcl">left over</div></div></div><div class="gleg" id="gauge-leg"></div></div></div>`);
   if(show.quick_math!==false&&qOn)pairA.push(`<div class="card"><div class="card-hd"><span class="card-title">&#x26A1; Quick Math</span><span class="badge ba" style="font-size:8px">receipt helper</span></div><div id="qm-widget"></div></div>`);
   if(pairA.length)parts.push(`<div class="dash-pair">${pairA.join('')}</div>`);
 
   const pairB=[];
   if(show.upcoming!==false){
-    const upAll=getUpcoming(14);
-    const upHtml=upAll.length?upAll.map(u=>`<div class="upi"><div class="upd" style="background:${u.type==='income'?'var(--green)':u.days<=3?'var(--red)':'var(--amber)'}"></div><div class="upn">${u.name}</div><div class="upw">${u.days===0?'Today':u.days===1?'Tmrw':'In '+u.days+'d'}</div><div class="upa ${u.type==='income'?'g':'r'}">${fmt(u.amount)}</div></div>`).join(''):`<div class="empty"><div class="ei">&#x1F4C5;</div><p class="ep">Nothing due soon.</p></div>`;
+    const upAll=S.upcoming.filter(u=>u.days<=14);
+    const upHtml=upAll.length?upAll.map(u=>{
+      const dot=u.type==='income'?'var(--green)':u.type==='payment'?(u.days<=3?'var(--red)':'var(--amber)'):'var(--blue)';
+      const amtCls=u.type==='income'?'g':u.type==='payment'?'r':'';
+      const amt=u.amount>0?`<div class="upa ${amtCls}">${fmt(u.amount)}</div>`:`<div class="upa"></div>`;
+      return `<div class="upi"><div class="upd" style="background:${dot}"></div><div class="upn">${escapeHtml(u.label)}</div><div class="upw">${u.days===0?'Today':u.days===1?'Tmrw':'In '+u.days+'d'}</div>${amt}</div>`;
+    }).join(''):`<div class="empty"><div class="ei">&#x1F4C5;</div><p class="ep">Nothing due soon.</p></div>`;
     pairB.push(`<div class="card"><div class="card-hd"><span class="card-title">Upcoming (14 Days)</span><button class="btn btn-g btn-sm" onclick="navigate('calendar_view')">Calendar</button></div><div class="upl">${upHtml}</div></div>`);
   }
   if(show.breakdown!==false){
     const bls=[];
-    if(pOn)bls.push(brow(suppIncome>0?'Base Take-Home':'Take-Home',basePay,'var(--green)',income,suppIncome===0));
+    if(pOn||basePay>0)bls.push(brow(suppIncome>0?'Base Take-Home':'Take-Home',basePay,'var(--green)',income,suppIncome===0));
     if(suppIncome>0){
-      for(const mod of MODS.filter(m=>m.globally_enabled&&m.user_enabled&&m.id!=='paycheck_pro')){
-        const fn=window[`${mod.id}_get_monthly_total`];
-        if(typeof fn==='function'){const v=parseFloat(fn())||0;if(v>0)bls.push(brow(`+ ${mod.name}`,v,'var(--green)',income));}
-      }
+      const suppByMod={};
+      S.income.sources.filter(s=>s.type==='supplemental').forEach(s=>{suppByMod[s.mod_name]=(suppByMod[s.mod_name]||0)+(parseFloat(s.monthly)||0);});
+      Object.entries(suppByMod).forEach(([nm,v])=>{if(v>0)bls.push(brow(`+ ${escapeHtml(nm)}`,v,'var(--green)',income));});
       bls.push(brow('Total Income',income,'var(--green)',income,true));
     }
-    if(sOn)bls.push(brow('Subscriptions',subs,'var(--red)',income));
-    if(bOn)bls.push(brow('Bills',bills,'var(--red)',income));
-    if(eOn)bls.push(brow('Expenses',expTot,'var(--red)',income));
+    Object.entries(S.expense.by_mod).sort((a,b)=>b[1]-a[1]).forEach(([mid,v])=>{if(v>0)bls.push(brow(escapeHtml(modName(mid)),v,'var(--red)',income));});
     bls.push('<hr class="dvd">');
     bls.push(brow('Net Remaining',net,net>=0?'var(--green)':'var(--red)',income,true));
     if(savCon>0)bls.push(brow('Saving',savCon,'var(--blue)',income));
-    const bCont=(pOn||suppIncome>0)?`<div style="display:flex;flex-direction:column;gap:8px">${bls.join('')}</div>`:`<div class="empty"><div class="ei">&#x1F4B5;</div><p class="ep">Enable Paycheck Pro to see breakdown.</p></div>`;
+    const bCont=(pOn||income>0)?`<div style="display:flex;flex-direction:column;gap:8px">${bls.join('')}</div>`:`<div class="empty"><div class="ei">&#x1F4B5;</div><p class="ep">Enable Paycheck Pro to see breakdown.</p></div>`;
     pairB.push(`<div class="card"><div class="card-hd"><span class="card-title">Monthly Breakdown</span></div>${bCont}</div>`);
   }
   if(pairB.length)parts.push(`<div class="dash-pair">${pairB.join('')}</div>`);
@@ -1098,7 +1156,7 @@ async function renderDashboard(){
   g('dash-body').innerHTML=parts.join('');
   animateStats(g('dash-body'));
 
-  if(show.gauge!==false&&pOn)drawGauge(income,subs,bills,expTot);
+  if(show.gauge!==false&&(pOn||income>0))drawGauge(S);
   if(show.quick_math!==false&&qOn&&window.renderQmWidget)window.renderQmWidget();
 
   const modWidgetEl=g('dash-mod-widgets');
@@ -1128,9 +1186,33 @@ async function renderDashboard(){
 }
 function brow(l,v,c,i,b=false){const p=i>0?Math.abs(Math.round(v/i*100)):0;return`<div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:13px;${b?'font-weight:700;color:var(--bright)':'color:var(--ghost)'}">${l}</span><span class="mono" style="color:${c};font-size:${b?'14':'12'}px;${b?'font-weight:600':''}">${fmt(v)}</span>${!b&&i>0?`<span style="font-size:9px;color:var(--muted);font-family:var(--fm);width:28px;text-align:right">${p}%</span>`:'<span style="width:28px"></span>'}</div>`;}
 
-function getUpcoming(days){const items=[];if(isOn('subscriptions'))(DB.subscriptions||[]).filter(s=>s.active&&s.next_due).forEach(s=>{const d=du(s.next_due);if(d>=0&&d<=days)items.push({name:s.name,amount:s.amount,days:d,type:'sub'});});if(isOn('bills'))(DB.bills||[]).forEach(b=>{const n=nextBill(b.due_day),d=du(n);if(d>=0&&d<=days)items.push({name:b.name,amount:b.amount,days:d,type:'bill'});});if(isOn('paycheck_pro'))(DB.paycheck_pro||[]).forEach(i=>{const n=nextPay(i.last_paid,i.frequency);if(n){const d=du(n);if(d>=0&&d<=days)items.push({name:'Payday: '+i.name,amount:netInc(i),days:d,type:'income'});}});return items.sort((a,b)=>a.days-b.days);}
-
-function drawGauge(income,subs,bills,expTot){const canvas=g('gauge-c');if(!canvas)return;const ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,W=220,H=130;canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.scale(dpr,dpr);ctx.clearRect(0,0,W,H);const cx=W/2,cy=H-8,r=96,disp=Math.max(0,income-subs-bills-expTot);ctx.beginPath();ctx.arc(cx,cy,r,Math.PI,2*Math.PI);ctx.strokeStyle='#1c2128';ctx.lineWidth=16;ctx.lineCap='round';ctx.stroke();if(income>0){let angle=Math.PI;[{val:subs,color:'#e05252'},{val:bills,color:'#f0a000'},{val:expTot,color:'#a87cff'},{val:disp,color:'#38c872'}].forEach(seg=>{if(seg.val<=0)return;const sw=(seg.val/income)*Math.PI;ctx.beginPath();ctx.arc(cx,cy,r,angle,angle+sw);ctx.strokeStyle=seg.color;ctx.lineWidth=16;ctx.lineCap='butt';ctx.stroke();angle+=sw;});}const gv=g('gauge-v');if(gv)gv.textContent=fmtK(disp);const gl=g('gauge-leg');if(gl)gl.innerHTML=[{l:'Subs',c:'#e05252',v:subs},{l:'Bills',c:'#f0a000',v:bills},{l:'Exp',c:'#a87cff',v:expTot},{l:'Free',c:'#38c872',v:disp}].map(x=>`<div class="gli"><div class="gld" style="background:${x.c}"></div><span>${x.l}</span><span class="mono" style="color:var(--bright);margin-left:4px">${fmtK(x.v)}</span></div>`).join('');}
+function drawGauge(S){
+  const canvas=g('gauge-c');if(!canvas)return;
+  const income=S.income.monthly_total;
+  const PAL=['#e05252','#f0a000','#a87cff','#5ab4ff','#fb923c','#3ad8d8'];
+  const entries=Object.entries(S.expense.by_mod).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const segs=entries.slice(0,3).map(([mid,v],i)=>{const m=MODS.find(x=>x.id===mid);return{l:(m?m.name:mid).split(' ')[0],c:PAL[i],v};});
+  const rest=entries.slice(3).reduce((s,[,v])=>s+v,0);
+  if(rest>0)segs.push({l:'Other',c:PAL[3],v:rest});
+  const disp=Math.max(0,income-S.expense.monthly_total);
+  const ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,W=220,H=130;
+  canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.scale(dpr,dpr);ctx.clearRect(0,0,W,H);
+  const cx=W/2,cy=H-8,r=96;
+  ctx.beginPath();ctx.arc(cx,cy,r,Math.PI,2*Math.PI);ctx.strokeStyle='#1c2128';ctx.lineWidth=16;ctx.lineCap='round';ctx.stroke();
+  if(income>0){
+    let angle=Math.PI;
+    segs.concat([{l:'Free',c:'#38c872',v:disp}]).forEach(seg=>{
+      if(seg.v<=0)return;
+      const sw=(seg.v/income)*Math.PI;
+      ctx.beginPath();ctx.arc(cx,cy,r,angle,angle+sw);ctx.strokeStyle=seg.c;ctx.lineWidth=16;ctx.lineCap='butt';ctx.stroke();
+      angle+=sw;
+    });
+  }
+  const gv=g('gauge-v');if(gv)gv.textContent=fmtK(disp);
+  const gl=g('gauge-leg');
+  if(gl)gl.innerHTML=segs.concat([{l:'Free',c:'#38c872',v:disp}]).map(x=>`<div class="gli"><div class="gld" style="background:${x.c}"></div><span>${escapeHtml(x.l)}</span><span class="mono" style="color:var(--bright);margin-left:4px">${fmtK(x.v)}</span></div>`).join('');
+}
 
 function renderSettings(){
   const grid=g('settings-grid');
@@ -1145,27 +1227,6 @@ function renderSettings(){
 }
 async function toggleMod(id,enable){try{const r=await api('POST',`/api/mods/${id}/toggle`,{enabled:enable});toast(r.message,enable?'ok':'wn');await loadMods();buildSidebar();renderSettings();}catch(e){toast(e.message,'er');}}
 
-function renderProfile(){
-  g('prof-info').innerHTML=`<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg2);border-radius:var(--r)"><div style="width:42px;height:42px;background:var(--amber);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000">${ME.username[0].toUpperCase()}</div><div><div style="font-weight:700;font-size:15px;color:var(--bright)">${escapeHtml(ME.username)}</div><div style="font-size:11px;color:var(--dim);font-family:var(--fm);margin-top:2px">${ME.is_admin?'Administrator':'User'} &middot; ID: ${escapeHtml(ME.id)}</div></div></div>`;
-  const badge=g('prof-2fa-badge');
-  const info=g('prof-2fa-info');
-  if(badge)badge.textContent=ME.totp_configured?'&#x2705; Active':'&#x26A0; Not Set Up';
-  if(badge)badge.className=`badge ${ME.totp_configured?'bg':'ba'}`;
-  if(info)info.innerHTML=`
-    <div style="font-size:13px;color:var(--ghost);line-height:1.7;margin-bottom:14px">
-      ${ME.totp_configured
-        ?`Two-factor authentication is active on your account. Set up date: <span class="mono am">${ME.totp_setup_date||'unknown'}</span>`
-        :'Your account does not have two-factor authentication set up.'}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn btn-g btn-sm" onclick="showTotpSetup(true)" style="align-self:flex-start">
-        &#x1F4F1; ${ME.totp_configured?'Setup New Authenticator':'Set Up 2FA'}
-      </button>
-      ${ME.totp_configured?'<div class="alert al-i" style="font-size:11px">Setting up a new authenticator replaces your current one. Make sure your new app is ready before starting.</div>':''}
-    </div>`;
-  g('pw-c').value='';g('pw-n').value='';g('pw-c2').value='';
-}
-async function changePw(){const c=g('pw-c').value,n=g('pw-n').value,c2=g('pw-c2').value;if(!c||!n||!c2){toast('Fill in all fields','wn');return;}if(n!==c2){toast('Passwords do not match','wn');return;}if(n.length<8){toast('Min 8 characters','wn');return;}try{await api('POST','/api/change-password',{current:c,new:n});toast('Password updated','ok');g('pw-c').value='';g('pw-n').value='';g('pw-c2').value='';}catch(e){toast(e.message,'er');}}
 
 function renderData(){
   const el=document.getElementById('data-stats');
@@ -1180,93 +1241,6 @@ async function importData(){
     const r=await fetch('/api/import/json',{method:'POST',body:form});
     const d=await r.json();if(!r.ok)throw new Error(d.error);
     toast(d.message,'ok');
-  }catch(e){toast(e.message,'er');}
-}
-
-async function loadAdmMods(){const el=g('adm-mods');el.innerHTML='<div style="color:var(--dim);padding:10px">Loading...</div>';try{const mods=await api('GET','/api/admin/mods');el.innerHTML=`<div class="card"><div class="card-hd"><span class="card-title">Global Mod Control</span></div><div class="mod-grid">${mods.map(m=>`<div class="mod-card"><div class="mod-card-row"><div class="mod-icon">${m.icon}</div><div class="mod-info"><div class="mod-name">${m.name}</div><div class="mod-desc">Global: ${m.globally_enabled?'<span style="color:var(--green)">Enabled</span>':'<span style="color:var(--red)">Disabled for all users</span>'}</div></div><label class="toggle"><input type="checkbox" ${m.globally_enabled?'checked':''} onchange="admToggleMod('${m.id}',this.checked)"><div class="tgl-tr"></div><div class="tgl-th"></div></label></div></div>`).join('')}</div></div>`;}catch(e){el.innerHTML=`<div class="alert al-d">${e.message}</div>`;}}
-async function admToggleMod(id,enable){try{const r=await api('POST',`/api/admin/mods/${id}/toggle`,{enabled:enable});toast(r.message,enable?'ok':'wn');await loadMods();buildSidebar();loadAdmMods();}catch(e){toast(e.message,'er');}}
-async function loadAdmUsers(){
-  const el=g('adm-users');
-  el.innerHTML='<div style="color:var(--dim);padding:10px">Loading...</div>';
-  try{
-    const [users,regStatus]=await Promise.all([
-      api('GET','/api/admin/users'),
-      fetch('/api/registration-status').then(r=>r.json()).catch(()=>({open:true}))
-    ]);
-    const regOpen=regStatus.open;
-    el.innerHTML=`
-      <div class="card" style="margin-bottom:0">
-        <div class="card-hd"><span class="card-title">Registration</span></div>
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;color:var(--bright);margin-bottom:3px">
-              ${regOpen?'&#x1F7E2; Open — anyone with your URL can register':'&#x1F534; Closed — only existing users can log in'}
-            </div>
-            <div style="font-size:11px;color:var(--dim)">
-              ${regOpen?'Turn this off to lock down your Monolith from the internet.':'The Register tab is hidden on the login screen.'}
-            </div>
-          </div>
-          <button class="btn ${regOpen?'btn-d':'btn-ok'} btn-sm" onclick="admToggleReg(${!regOpen})">
-            ${regOpen?'&#x1F512; Close Registration':'&#x1F513; Open Registration'}
-          </button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-hd"><span class="card-title">All Users</span></div>
-        ${users.map(u=>`
-          <div class="ur">
-            <div class="ur-av">${escapeHtml(u.username[0].toUpperCase())}</div>
-            <div class="ur-info">
-              <div class="ur-name">${escapeHtml(u.username)}
-                ${u.is_admin?'<span class="badge ba">Admin</span>':''}
-                ${u.id===ME.id?'<span class="badge bg">You</span>':''}
-              </div>
-              <div class="ur-meta">ID: ${escapeHtml(u.id)} &middot; Joined: ${fd(u.created)}</div>
-            </div>
-            ${u.id!==ME.id?`
-              <div class="ra">
-                <button class="btn btn-g btn-xs" data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.username)}" onclick="admResetPw(this.dataset.uid,this.dataset.uname)" title="Reset Password">&#x1F511;</button>
-                <button class="btn btn-ok btn-xs" data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.username)}" onclick="admResetTotp(this.dataset.uid,this.dataset.uname)" title="Reset 2FA">&#x1F6E1;</button>
-                <button class="btn btn-d btn-xs" data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.username)}" onclick="admDelUser(this.dataset.uid,this.dataset.uname)">&#x1F5D1;</button>
-              </div>`:''}
-          </div>`).join('')}
-      </div>`;
-  }catch(e){el.innerHTML=`<div class="alert al-d">${e.message}</div>`;}
-}
-
-async function admToggleReg(allow){
-  try{
-    const r=await api('POST','/api/admin/registration',{allow});
-    toast(r.message,allow?'ok':'wn');
-    const reTab=g('tab-re');const tabBar=g('auth-tabs');
-    if(reTab)  reTab.style.display  = allow ? '' : 'none';
-    if(tabBar) tabBar.style.display = allow ? '' : 'none';
-    loadAdmUsers();
-  }catch(e){toast(e.message,'er');}
-}
-
-async function admDelUser(id,username){
-  if(!confirm(`Delete "${username}" and all their encrypted data? This cannot be undone.`))return;
-  try{await api('DELETE',`/api/admin/users/${id}`);toast(`"${username}" deleted`,'ok');loadAdmUsers();}
-  catch(e){toast(e.message,'er');}
-}
-
-async function admResetTotp(uid,username){
-  if(!confirm(`Reset 2FA for "${username}"?\n\nTheir authenticator will be unlinked. They will be required to set up a new one on next login.\n\nTheir financial data is NOT affected.`))return;
-  try{
-    const r=await api('DELETE',`/api/admin/users/${uid}/reset-totp`);
-    toast(r.message,'ok');loadAdmUsers();
-  }catch(e){toast(e.message,'er');}
-}
-
-async function admSubmitReset(uid,username){
-  const pw=g('rst-pw')?.value,pw2=g('rst-pw2')?.value,confirmed=g('rst-confirm')?.checked;
-  if(!pw||pw.length<8){toast('Password must be at least 8 characters','wn');return;}
-  if(pw!==pw2){toast('Passwords do not match','wn');return;}
-  if(!confirmed){toast('You must check the confirmation box','wn');return;}
-  try{
-    const r=await api('POST',`/api/admin/users/${uid}/reset-password`,{new_password:pw,confirmed:true});
-    toast(r.message,'ok');closeModal();loadAdmUsers();
   }catch(e){toast(e.message,'er');}
 }
 

@@ -47,6 +47,16 @@
                 Your financial data is Fernet-encrypted with a key unique to your account.
                 Resetting your password via admin wipes all data — keep your password safe.
             </div>
+
+            <div class="card" style="border-color:rgba(224,82,82,.4)">
+                <div class="card-hd"><span class="card-title" style="color:var(--red)">Danger Zone</span></div>
+                <div style="font-size:13px;color:var(--ghost);line-height:1.7;margin-bottom:12px">
+                    Permanently delete this account and everything in it — income history,
+                    expenses, balances, settings, all of it. No admin approval is needed,
+                    and there is no undo.
+                </div>
+                <button class="btn btn-d btn-sm" onclick="prof_showDeleteAccount()">&#x1F5D1; Delete My Account</button>
+            </div>
         `;
         document.getElementById('content').appendChild(div);
     })();
@@ -233,6 +243,49 @@
         if (typeof window.showTotpSetup === 'function') {
             window.showTotpSetup(true);
         }
+    };
+
+    window.prof_showDeleteAccount = function () {
+        openModal('Delete Account — Permanent', `
+            <div class="alert al-d" style="margin-bottom:14px">
+                &#x1F6A8; <strong>This deletes everything.</strong> Every mod, every
+                record, your login itself. There is no undo and no recovery.
+            </div>
+            <div class="fg" style="margin-bottom:10px">
+                <label>Type your username (<span class="mono">${escapeHtml(ME.username)}</span>) to confirm</label>
+                <input id="del-un" type="text" placeholder="Username" autocomplete="off">
+            </div>
+            <div class="fg" style="margin-bottom:10px">
+                <label>Your password</label>
+                <input id="del-pw" type="password" placeholder="Password" autocomplete="current-password">
+            </div>
+            <div class="fg" style="margin-bottom:14px">
+                <label>Authenticator code</label>
+                <input id="del-totp" class="totp-inp" type="text" inputmode="numeric"
+                       pattern="[0-9]*" maxlength="6" placeholder="000000"
+                       style="font-size:28px;letter-spacing:8px;height:60px;text-align:center">
+            </div>
+            <div class="fa">
+                <button class="btn btn-g btn-sm" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-d" onclick="prof_deleteAccount()">Delete Everything Forever</button>
+            </div>`);
+        setTimeout(() => g('del-un')?.focus(), 100);
+    };
+
+    window.prof_deleteAccount = async function () {
+        const un   = g('del-un')?.value?.trim();
+        const pw   = g('del-pw')?.value;
+        const code = g('del-totp')?.value?.trim();
+        if (un !== ME.username) { toast('Username does not match', 'wn'); return; }
+        if (!pw) { toast('Enter your password', 'wn'); return; }
+        if (!code || code.length !== 6) { toast('Enter your 6-digit code', 'wn'); return; }
+        try {
+            const r = await api('POST', '/api/mod/profile/delete-account',
+                                { password: pw, totp_confirm: code });
+            closeModal();
+            toast(r.message, 'wn');
+            setTimeout(() => location.reload(), 1400);
+        } catch (e) { toast(e.message, 'er'); }
     };
 
 })();

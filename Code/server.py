@@ -1,4 +1,4 @@
-import json, os, sys, secrets, importlib.util, shutil, threading, signal, time
+import json, os, sys, secrets, importlib.util, threading, signal, time
 from datetime import datetime
 from pathlib import Path
 import bcrypt
@@ -19,13 +19,14 @@ sys.path.insert(0, str(BASE_DIR))
 from vault_core import (
     auth, admin_only, partial_auth, mod_auth,
     get_db, load_mod_data, save_mod_data, delete_mod_data,
-    load_security, save_security, delete_security,
-    new_id, today, json_body, DATA_DIR, SESSION_KEY,
+    load_security, save_security, delete_security, delete_user_data,
+    new_id, today, json_body, SESSION_KEY,
     login_limiter, totp_limiter, register_limiter,
     totp_mark_used, totp_is_used,
     gen_backup_codes, hash_backup_code, verify_backup_code, backup_codes_remaining,
     log_security, client_ip as _client_ip,
 )
+import vault_bridge
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
 app.secret_key = SESSION_KEY
@@ -195,11 +196,12 @@ def load_plugins():
             mod  = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
             if hasattr(mod, "blueprint"):
                 app.register_blueprint(mod.blueprint, url_prefix=f"/api/mod/{mid}")
+            hooks = vault_bridge.register_provider_module(mid, manifest.get("name", mid), mod)
             PLUGINS[mid] = manifest
             with get_db() as db:
                 db.execute("INSERT OR IGNORE INTO global_mods(mod_id,globally_enabled) VALUES(?,1)", (mid,))
                 db.commit()
-            print(f"  [plugin] loaded: {mid}")
+            print(f"  [plugin] loaded: {mid}" + (f" ({hooks} bridge hooks)" if hooks else ""))
         except Exception as e:
             print(f"  [warn]   failed {pd.name}: {e}")
 
@@ -220,7 +222,8 @@ def me():
         sec    = load_security(u["id"])
         status = "totp_required" if sec.get("totp_secret") else "setup_required"
         return jsonify({"status": status, "id": u["id"], "username": u["username"]})
-    return jsonify({"id": u["id"], "username": u["username"], "is_admin": bool(u["is_admin"])})
+    return jsonify({"id": u["id"], "username": u["username"], "is_admin": bool(u["is_admin"]),
+                    "prefs": load_mod_data(u["id"], _PREFS_KEY)})
 
 @app.route("/api/registration-status")
 def registration_status():
@@ -234,6 +237,11 @@ def health():
 @auth
 def api_version():
     return jsonify({"version": VERSION})
+
+@app.route("/api/bridge/summary")
+@auth
+def bridge_summary():
+    return jsonify(vault_bridge.get_summary(session["uid"]))
 
 @app.route("/api/register", methods=["POST"])
 def register():
@@ -401,7 +409,8 @@ def totp_verify():
     session["totp_verified"] = True
     with get_db() as db:
         u = db.execute("SELECT id,username,is_admin FROM users WHERE id=?", (uid,)).fetchone()
-    return jsonify({"id": u["id"], "username": u["username"], "is_admin": bool(u["is_admin"])})
+    return jsonify({"id": u["id"], "username": u["username"], "is_admin": bool(u["is_admin"]),
+                    "prefs": load_mod_data(uid, _PREFS_KEY)})
 
 @app.route("/api/totp/backup", methods=["POST"])
 @partial_auth
@@ -432,6 +441,7 @@ def totp_backup_verify():
     with get_db() as db:
         u = db.execute("SELECT id,username,is_admin FROM users WHERE id=?", (uid,)).fetchone()
     return jsonify({"id": u["id"], "username": u["username"], "is_admin": bool(u["is_admin"]),
+                    "prefs": load_mod_data(uid, _PREFS_KEY),
                     "backup_codes_remaining": remaining,
                     "warning": (
                         "You have no backup codes left. Regenerate them in Profile → Security."
@@ -439,7 +449,23 @@ def totp_backup_verify():
                         f"You have {remaining} backup code(s) remaining." if remaining <= 2 else None
                     )})
 
-_DASH_KEY = "_dashboard_layout"
+_DASH_KEY   = "_dashboard_layout"
+_PREFS_KEY  = "_vault_prefs"
+_BG_CHOICES = {"off", "squares", "triangles", "hexagons"}
+
+@app.route("/api/user/prefs", methods=["POST"])
+@auth
+def save_user_prefs():
+    r     = json_body()
+    uid   = session["uid"]
+    prefs = load_mod_data(uid, _PREFS_KEY)
+    if "background" in r:
+        bg = str(r.get("background") or "")
+        if bg not in _BG_CHOICES:
+            return jsonify({"error": "invalid background"}), 400
+        prefs["background"] = bg
+    save_mod_data(uid, _PREFS_KEY, prefs)
+    return jsonify({"ok": True, "prefs": prefs})
 
 @app.route("/api/user/dashboard", methods=["GET"])
 @auth
@@ -565,11 +591,27 @@ def admin_delete_user(uid):
         if not u: return jsonify({"error": "User not found"}), 404
         db.execute("DELETE FROM users WHERE id=?", (uid,))
         db.execute("DELETE FROM user_mods WHERE user_id=?", (uid,))
+        db.execute("DELETE FROM totp_used WHERE uid_code LIKE ?", (f"{uid}:%",))
         db.commit()
-    user_dir = DATA_DIR / uid
-    if user_dir.exists(): shutil.rmtree(user_dir)
+    delete_user_data(uid)
     log_security("user_deleted", uid=uid, username=u["username"], detail=f"by_admin={session['uid']}")
     return jsonify({"ok": True})
+
+@app.route("/api/admin/users/<uid>/admin", methods=["POST"])
+@admin_only
+def admin_set_admin(uid):
+    if uid == session["uid"]:
+        return jsonify({"error": "Cannot change your own admin status"}), 400
+    want = bool(json_body().get("is_admin", False))
+    with get_db() as db:
+        u = db.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()
+        if not u: return jsonify({"error": "User not found"}), 404
+        db.execute("UPDATE users SET is_admin=? WHERE id=?", (int(want), uid))
+        db.commit()
+    log_security("admin_status_changed", uid=uid, username=u["username"],
+                 detail=f"is_admin={int(want)} by_admin={session['uid']}")
+    return jsonify({"ok": True, "is_admin": want,
+                    "message": f"{u['username']} is {'now an admin' if want else 'no longer an admin'}."})
 
 @app.route("/api/admin/users/<uid>/reset-password", methods=["POST"])
 @admin_only
@@ -588,8 +630,7 @@ def admin_reset_password(uid):
                    (bcrypt.hashpw(r["new_password"].encode(), bcrypt.gensalt()).decode(), uid))
         db.execute("DELETE FROM user_mods WHERE user_id=?", (uid,))
         db.commit()
-    user_dir = DATA_DIR / uid
-    if user_dir.exists(): shutil.rmtree(user_dir)
+    delete_user_data(uid)
     log_security("password_reset_by_admin", uid=uid, username=u["username"], detail=f"by_admin={session['uid']}")
     return jsonify({"ok": True, "message": f"Password reset for {u['username']}. Their data has been cleared."})
 

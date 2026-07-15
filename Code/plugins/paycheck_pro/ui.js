@@ -522,17 +522,4 @@ function pp_renderHistStats(){
   `;
 }
 
-window.paycheck_pro_get_monthly_total=function(){
-  const history=DB['paycheck_pro_history']||[];
-  const cur=cmk();
-  const thisMoLogged=history.filter(h=>h.date?.startsWith(cur));
-
-  if(thisMoLogged.length>0){
-    return thisMoLogged.reduce((s,h)=>s+parseFloat(h.actual||0),0);
-  }
-
-  const sources=DB['paycheck_pro']||[];
-  return sources.reduce((s,i)=>s+toMo(parseFloat(i.net||0),i.frequency),0);
-};
-
 })();

@@ -60,12 +60,6 @@ window.dashWidget_ot_vault=function(){
     </div>`;
 };
 
-window.ot_vault_get_monthly_total=function(){
-    const items=DB['ot_vault']||[];
-    const monthKey=cmk();
-    return items.filter(i=>i.date&&i.date.startsWith(monthKey)).reduce((sum,i)=>sum+parseFloat(i.net||0),0);
-};
-
 window.render_ot_vault=async function(){
     const items=(DB['ot_vault']||[]).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     const mk=cmk(),yr=new Date().getFullYear().toString();

@@ -3,12 +3,20 @@ import bcrypt
 from flask import Blueprint, jsonify, request, session
 from vault_core import (
     auth, load_security, save_security,
-    totp_limiter, totp_mark_used, totp_is_used,
+    totp_mark_used, totp_is_used, RateLimiter, delete_user_data,
     gen_backup_codes, hash_backup_code, backup_codes_remaining,
     log_security, get_db, today, client_ip as _client_ip, json_body,)
 
 MOD_ID    = "profile"
 blueprint = Blueprint(MOD_ID, __name__)
+
+pw_limiter = RateLimiter(max_attempts=5, window_secs=900, lockout_secs=900)
+
+def _pw_gate(uid: str):
+    allowed, wait = pw_limiter.check(f"profile_pw:{uid}")
+    if allowed: return None
+    return jsonify({"error": f"Too many failed attempts. Try again in {wait}s.",
+                    "locked": True, "wait_seconds": wait}), 429
 
 def _verify_totp_inline(uid: str, code: str) -> bool:
     sec  = load_security(uid)
@@ -43,9 +51,12 @@ def get_profile():
 def change_password():
     r   = json_body()
     uid = session["uid"]
+    gate = _pw_gate(uid)
+    if gate: return gate
     with get_db() as db:
         u = db.execute("SELECT password_hash FROM users WHERE id=?", (uid,)).fetchone()
     if not bcrypt.checkpw(r.get("current", "").encode(), u["password_hash"].encode()):
+        pw_limiter.record_failure(f"profile_pw:{uid}")
         return jsonify({"error": "Current password incorrect"}), 400
     if len(r.get("new", "")) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
@@ -53,6 +64,7 @@ def change_password():
         db.execute("UPDATE users SET password_hash=? WHERE id=?",
                    (bcrypt.hashpw(r["new"].encode(), bcrypt.gensalt()).decode(), uid))
         db.commit()
+    pw_limiter.reset(f"profile_pw:{uid}")
     log_security("password_changed", uid=uid, ip=_client_ip())
     return jsonify({"ok": True})
 
@@ -81,13 +93,64 @@ def regen_backup_codes():
 def disable_2fa():
     r   = json_body()
     uid = session["uid"]
+    gate = _pw_gate(uid)
+    if gate: return gate
     with get_db() as db:
         u = db.execute("SELECT password_hash,username FROM users WHERE id=?", (uid,)).fetchone()
     if not bcrypt.checkpw(r.get("password", "").encode(), u["password_hash"].encode()):
+        pw_limiter.record_failure(f"profile_pw:{uid}")
         return jsonify({"error": "Incorrect password"}), 403
     if not _verify_totp_inline(uid, str(r.get("totp_confirm", "")).strip()):
+        pw_limiter.record_failure(f"profile_pw:{uid}")
         log_security("disable_2fa_fail", uid=uid, ip=_client_ip(), detail="bad_totp")
         return jsonify({"error": "Enter a valid code from your authenticator app."}), 403
+    pw_limiter.reset(f"profile_pw:{uid}")
     save_security(uid, {})
     log_security("totp_disabled", uid=uid, username=u["username"], ip=_client_ip())
     return jsonify({"ok": True, "message": "2FA removed. You will be required to set it up again on next login."})
+
+@blueprint.route("/delete-account", methods=["POST"])
+@auth
+def delete_account():
+    r   = json_body()
+    uid = session["uid"]
+    gate = _pw_gate(uid)
+    if gate: return gate
+    with get_db() as db:
+        u = db.execute("SELECT username,password_hash,is_admin FROM users WHERE id=?",
+                       (uid,)).fetchone()
+    if not u:
+        session.clear()
+        return jsonify({"error": "Not authenticated"}), 401
+    if not bcrypt.checkpw(r.get("password", "").encode(), u["password_hash"].encode()):
+        pw_limiter.record_failure(f"profile_pw:{uid}")
+        log_security("account_delete_fail", uid=uid, username=u["username"],
+                     ip=_client_ip(), detail="bad_password")
+        return jsonify({"error": "Incorrect password"}), 403
+    if not _verify_totp_inline(uid, str(r.get("totp_confirm", "")).strip()):
+        pw_limiter.record_failure(f"profile_pw:{uid}")
+        log_security("account_delete_fail", uid=uid, username=u["username"],
+                     ip=_client_ip(), detail="bad_totp")
+        return jsonify({"error": "Enter a valid code from your authenticator app."}), 403
+    if u["is_admin"]:
+        with get_db() as db:
+            others = db.execute("SELECT COUNT(*) AS c FROM users WHERE id!=?",
+                                (uid,)).fetchone()["c"]
+            admins = db.execute("SELECT COUNT(*) AS c FROM users WHERE id!=? AND is_admin=1",
+                                (uid,)).fetchone()["c"]
+        if others and not admins:
+            return jsonify({"error": "You are the only admin. Make another user an admin "
+                                     "first (Admin page, crown button)."}), 400
+    pw_limiter.reset(f"profile_pw:{uid}")
+    username = u["username"]
+    with get_db() as db:
+        db.execute("DELETE FROM users WHERE id=?", (uid,))
+        db.execute("DELETE FROM user_mods WHERE user_id=?", (uid,))
+        db.execute("DELETE FROM totp_used WHERE uid_code LIKE ?", (f"{uid}:%",))
+        db.commit()
+    delete_user_data(uid)
+    log_security("account_deleted", uid=uid, username=username, ip=_client_ip(),
+                 detail="self_service")
+    session.clear()
+    return jsonify({"ok": True,
+                    "message": "Account deleted. All of your data has been permanently removed."})

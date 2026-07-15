@@ -171,3 +171,14 @@ def disconnect():
     _save(uid, {})
     log_security("bank_sync_disconnected", uid=uid)
     return jsonify({"ok": True})
+
+def bridge_balances(uid):
+    out = []
+    for acc in _data(uid).get("accounts", []):
+        try:
+            balance = float(str(acc.get("balance", "0")).replace(",", ""))
+        except ValueError:
+            continue
+        name = " ".join(p for p in (acc.get("org", ""), acc.get("name", "")) if p) or "Account"
+        out.append({"kind": "asset", "name": name, "amount": balance, "category": "bank"})
+    return out

@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 
-from vault_core import load_mod_data, save_mod_data, mod_auth, new_id, today, json_body
+from vault_core import (load_mod_data, save_mod_data, mod_auth, new_id, today,
+                        json_body, monthly_amount, safe_float, PAY_GAP_DAYS)
 from flask import Blueprint, jsonify, request, session
 
 MOD_ID = "paycheck_pro"
@@ -8,7 +9,7 @@ blueprint = Blueprint(MOD_ID, __name__)
 
 PERIODS = {"weekly": 52, "biweekly": 26, "semimonthly": 24, "monthly": 12, "annual": 1}
 
-PAY_GAP = {"weekly": 7, "biweekly": 14, "semimonthly": 15, "monthly": 30, "annual": 365}
+PAY_GAP = PAY_GAP_DAYS
 PROJECT_DAYS = 60
 IMPORT_MAX_ENTRIES = 200
 MATCH_WINDOW_DAYS = 5
@@ -391,3 +392,63 @@ def import_payroll():
     _save(uid, d)
     return jsonify({"ok": True, "verified": verified, "added": added,
                     "skipped": len(skipped), "reasons": skipped[:10]})
+
+def bridge_income(uid):
+    d = _load(uid)
+    month_key = today()[:7]
+    sources = []
+    for src in d.get("sources", []):
+        net  = safe_float(src.get("net", src.get("net_direct", 0)))
+        freq = src.get("frequency", "biweekly")
+        sources.append({
+            "name":      src.get("name", "Paycheck"),
+            "net":       net,
+            "gross":     safe_float(src.get("gross", net)),
+            "monthly":   monthly_amount(net, freq),
+            "frequency": freq,
+            "type":      "primary",
+            "date":      src.get("last_paid", ""),
+        })
+    actual_this_month = [h for h in d.get("history", [])
+                         if str(h.get("date", "")).startswith(month_key)]
+    if actual_this_month:
+        actual_total = sum(safe_float(h.get("actual", 0)) for h in actual_this_month)
+        for s in sources:
+            s["monthly"] = 0
+        sources.append({
+            "mod_name":  "Paycheck Pro (Actual)",
+            "name":      "Logged Paychecks",
+            "net":       actual_total,
+            "gross":     actual_total,
+            "monthly":   actual_total,
+            "frequency": "actual",
+            "type":      "primary",
+            "date":      today(),
+        })
+    return sources
+
+def bridge_events(uid, year, month):
+    events = []
+    target_month = date(year, month, 1)
+    for src in _sources(uid):
+        last_paid = src.get("last_paid")
+        if not last_paid:
+            continue
+        try:
+            dt = date.fromisoformat(str(last_paid)[:10])
+        except ValueError:
+            continue
+        gap = timedelta(days=PAY_GAP.get(src.get("frequency", "biweekly"), 14))
+        while dt < target_month:
+            dt += gap
+        while dt.year == year and dt.month == month:
+            events.append({
+                "date":   dt.isoformat(),
+                "label":  f"Payday — {src.get('name', '')}",
+                "amount": safe_float(src.get("net", 0)),
+                "type":   "income",
+                "color":  "#38c872",
+                "icon":   "💵",
+            })
+            dt += gap
+    return events

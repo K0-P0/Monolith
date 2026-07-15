@@ -75,10 +75,6 @@ window.dashWidget_freelance_flow=function(){
     </div>`;
 };
 
-window.freelance_flow_get_monthly_total=function(){
-    return(DB[FF_ID]||[]).filter(j=>(j.paid_date||'').startsWith(cmk())).reduce((s,j)=>s+ffNet(j),0);
-};
-
 window.render_freelance_flow=async function(){
     const items=DB[FF_ID]||[];
     const active=items.filter(j=>j.status!=='Archived');
