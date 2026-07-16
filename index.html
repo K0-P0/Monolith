@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Monolith — self-hosted personal finance. 19 plugins, Fernet encryption at rest, mandatory 2FA. No cloud. Your data on your machine.">
+<meta name="theme-color" content="#0d0f12">
+<title>Monolith — Your finances. Your hardware.</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f0a000'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='19' font-weight='900' text-anchor='middle' fill='%23000'%3EM%3C/text%3E%3C/svg%3E">
+<style>
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url('fonts/ibm-plex-mono-400.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('fonts/ibm-plex-mono-500.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;font-display:swap;src:url('fonts/ibm-plex-mono-600.woff2') format('woff2')}
+@font-face{font-family:'Syne';font-style:normal;font-weight:400 800;font-display:swap;src:url('fonts/syne-variable.woff2') format('woff2')}
+
+:root{
+  --bg:#0d0f12;--bg1:#111418;--bg2:#161a1f;--bg3:#1c2128;--term:#0a0c0e;
+  --line:#252d36;--line2:#2e3844;
+  --muted:#3d4d5c;--dim:#5e7080;--ghost:#8a9aaa;--text:#c8d8e8;--bright:#e8f0f8;
+  --amber:#f0a000;--amber2:#c88000;--amber-bg:rgba(240,160,0,.09);--amber-line:rgba(240,160,0,.28);--amber-glow:rgba(240,160,0,.22);
+  --green:#38c872;--green-bg:rgba(56,200,114,.09);--green-line:rgba(56,200,114,.28);
+  --red:#e05252;--red-bg:rgba(224,82,82,.07);--red-line:rgba(224,82,82,.25);
+  --fd:'Syne',sans-serif;--fm:'IBM Plex Mono',monospace;
+  --r:4px;--r2:8px;--r3:12px;--r4:16px;
+  --wrap:1100px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+html,body{background:var(--bg);color:var(--text);font-family:var(--fd);overflow-x:hidden}
+body{font-size:15px;line-height:1.6}
+::selection{background:var(--amber);color:#000}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+a{color:inherit}
+img{max-width:100%}
+button{font-family:var(--fd)}
+code{font-family:var(--fm)}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:2px}
+
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 24px}
+section{border-bottom:1px solid var(--line)}
+.sec{padding:96px 24px;max-width:var(--wrap);margin:0 auto}
+
+.label{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;color:var(--muted)}
+.badge{display:inline-block;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line);border-radius:999px;padding:4px 13px;font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase}
+.badge.green{background:var(--green-bg);color:var(--green);border-color:var(--green-line)}
+h2{color:var(--bright);font-size:clamp(24px,3.8vw,34px);font-weight:800;line-height:1.16;letter-spacing:-.02em;margin:14px 0 16px}
+h2 .am{color:var(--amber)}
+.lead{color:var(--ghost);font-size:15px;line-height:1.75;max-width:540px}
+
+.card{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:24px}
+.btn{display:inline-block;background:var(--amber);color:#000;border:none;border-radius:var(--r2);padding:13px 26px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;transition:background .15s,box-shadow .15s}
+.btn:hover{background:var(--amber2);box-shadow:0 0 18px var(--amber-glow)}
+.btn-ghost{display:inline-block;background:transparent;color:var(--ghost);border:1px solid var(--line2);border-radius:var(--r2);padding:13px 26px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;transition:border-color .15s,color .15s}
+.btn-ghost:hover{border-color:var(--amber);color:var(--bright)}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+.gplug{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.g2>*,.g3>*,.g4>*,.gplug>*{min-width:0}
+@media(max-width:768px){
+  .sec{padding:64px 24px}
+  .g2{grid-template-columns:1fr;gap:40px}
+  .g3{grid-template-columns:1fr}
+  .g4{grid-template-columns:1fr 1fr;gap:16px}
+  .gplug{grid-template-columns:1fr}
+  .nav-links{display:none!important}
+  .foot-grid{grid-template-columns:1fr 1fr!important;gap:28px!important}
+}
+@media(max-width:480px){.g4{grid-template-columns:1fr}.foot-grid{grid-template-columns:1fr!important}.gh-btn span{display:none}}
+
+/* ---------- nav ---------- */
+#nav{position:fixed;top:0;left:0;right:0;z-index:50;border-bottom:1px solid transparent;transition:background .25s,border-color .25s,backdrop-filter .25s}
+#nav.scrolled{background:rgba(13,15,18,.93);border-bottom-color:var(--line);backdrop-filter:blur(12px)}
+.nav-in{max-width:var(--wrap);margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-icon{width:30px;height:30px;background:var(--amber);border-radius:var(--r2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#000;box-shadow:0 0 14px var(--amber-glow)}
+.logo-name{font-weight:800;font-size:18px;color:var(--bright);letter-spacing:.5px}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{color:var(--ghost);font-size:13.5px;font-weight:600;text-decoration:none;transition:color .15s}
+.nav-links a:hover{color:var(--bright)}
+.nav-cta{display:flex;gap:10px;align-items:center}
+.gh-btn{display:flex;align-items:center;gap:7px;background:var(--bg1);color:var(--bright);border:1px solid var(--line2);border-radius:var(--r2);padding:8px 14px;font-size:13px;font-weight:600;text-decoration:none;transition:border-color .15s}
+.gh-btn:hover{border-color:var(--amber)}
+.nav-join{background:var(--amber);color:#000;border:none;border-radius:var(--r2);padding:8px 18px;font-size:13.5px;font-weight:700;cursor:pointer;text-decoration:none;transition:background .15s;white-space:nowrap}
+.nav-join:hover{background:var(--amber2)}
+
+/* ---------- hero ---------- */
+#hero{position:relative;padding:128px 24px 88px;overflow:hidden;border-bottom:1px solid var(--line)}
+#hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:44px 44px;opacity:.14;
+  -webkit-mask-image:radial-gradient(ellipse 75% 65% at 50% 0%,#000 25%,transparent 78%);
+  mask-image:radial-gradient(ellipse 75% 65% at 50% 0%,#000 25%,transparent 78%)}
+#hero::after{content:'';position:absolute;top:-140px;left:50%;transform:translateX(-50%);width:680px;height:440px;border-radius:50%;background:radial-gradient(ellipse,rgba(240,160,0,.10) 0%,transparent 70%);pointer-events:none}
+.hero-in{position:relative;z-index:1;max-width:var(--wrap);margin:0 auto}
+.hero-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
+h1{color:var(--bright);font-size:clamp(28px,4vw,42px);font-weight:800;line-height:1.12;letter-spacing:-.03em;margin-bottom:24px}
+h1 .am{color:var(--amber);text-shadow:0 0 32px var(--amber-glow)}
+.hero-sub{color:var(--ghost);font-size:16px;line-height:1.75;max-width:480px;margin-bottom:18px}
+.hero-quote{color:var(--dim);font-size:14px;font-style:italic;margin-bottom:34px;padding-left:14px;border-left:2px solid var(--amber-line);max-width:440px}
+.pullcmd{background:var(--term);border:1px solid var(--line);border-radius:var(--r2);padding:12px 16px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:520px}
+.pullcmd code{color:var(--amber);font-size:12.5px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.pullcmd button{background:transparent;border:1px solid var(--line2);border-radius:var(--r);padding:5px 12px;color:var(--dim);font-family:var(--fm);font-size:11px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
+.pullcmd button:hover{border-color:var(--amber);color:var(--text)}
+.pullcmd button.ok{color:var(--green);border-color:var(--green-line)}
+.hero-ctas{display:flex;gap:12px;flex-wrap:wrap}
+.hero-note{font-family:var(--fm);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:18px}
+.hero-right{display:flex;flex-direction:column;align-items:center;gap:16px}
+.hero-cap{font-family:var(--fm);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+
+/* boot terminal */
+.boot{background:var(--term);border:1px solid var(--amber-line);border-radius:var(--r3);overflow:hidden;max-width:330px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(240,160,0,.05);position:relative}
+.boot::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.015) 0 1px,transparent 1px 3px)}
+.boot-head{background:#0c0e10;border-bottom:1px solid rgba(240,160,0,.12);padding:9px 16px;display:flex;justify-content:space-between;align-items:center}
+.boot-title{color:var(--muted);font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.boot-dot{width:6px;height:6px;border-radius:50%;background:var(--amber);animation:pulse 2s infinite}
+.boot-body{padding:20px 20px 12px;font-family:var(--fm);font-size:12px;min-height:222px}
+.boot-line{opacity:0;transform:translateY(6px);transition:opacity .4s,transform .4s;margin-bottom:5px;white-space:nowrap}
+.boot-line.on{opacity:1;transform:translateY(0)}
+.cursor{display:inline-block;width:7px;height:14px;background:var(--amber);margin-left:5px;vertical-align:text-bottom;animation:pulse 1s infinite}
+.boot-foot{padding:0 20px 20px}
+.boot-stat{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-family:var(--fm)}
+.boot-stat .st{color:var(--muted);font-size:10px}
+.boot-stat .pc{color:var(--dim);font-size:11px;font-weight:600;transition:color .4s}
+.boot-stat .pc.full{color:var(--amber)}
+.boot-bar{height:4px;background:var(--bg3);border-radius:99px;overflow:hidden}
+.boot-fill{height:100%;width:0;border-radius:99px;background:var(--amber);transition:width .8s cubic-bezier(.4,0,.2,1);box-shadow:0 0 8px var(--amber-glow)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.boot.notrans .boot-line,.boot.notrans .boot-fill{transition:none}
+
+/* ---------- ticker ---------- */
+#ticker{border-bottom:1px solid var(--line);background:var(--bg1);padding:12px 0;overflow:hidden}
+.ticker-track{display:flex;gap:48px;white-space:nowrap;width:max-content;animation:marquee 26s linear infinite}
+.ticker-track span{color:var(--muted);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase}
+.ticker-track span::after{content:'·';color:var(--line2);margin-left:48px}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media(prefers-reduced-motion:reduce){
+  .ticker-track{animation:none}
+  html{scroll-behavior:auto}
+  .boot-line{transition:none}
+}
+
+/* ---------- comparison ---------- */
+.cmp{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r4);overflow:hidden;margin-top:48px}
+.cmp-row{display:grid;grid-template-columns:1.4fr 1fr 1fr;padding:14px 24px;border-bottom:1px solid var(--line);align-items:center}
+.cmp-row:last-child{border-bottom:none}
+.cmp-row.head{background:var(--bg);padding:12px 24px}
+.cmp-row.alt{background:rgba(255,255,255,.012)}
+.cmp-h{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+.cmp-h.us{color:var(--amber)}
+.cmp-l{color:var(--ghost);font-size:14px}
+.cmp-mark{text-align:center;font-size:15px;font-weight:700;font-family:var(--fm)}
+.y{color:var(--green)}.n{color:var(--red)}.ya{color:var(--amber)}
+
+/* ---------- plugins ---------- */
+.plug{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:20px;transition:border-color .2s,transform .2s}
+.plug:hover{border-color:var(--amber-line);transform:translateY(-2px)}
+.plug-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.plug-name{color:var(--bright);font-size:14px;font-weight:700}
+.plug-beta{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+.plug p{color:var(--dim);font-size:13px;line-height:1.55}
+
+/* ---------- security ---------- */
+.sec-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+@media(max-width:768px){.sec-cards{grid-template-columns:1fr}}
+.sec-card{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:24px}
+.sec-icon{color:var(--amber);font-size:22px;margin-bottom:12px}
+.sec-title{color:var(--bright);font-size:15px;font-weight:700;margin-bottom:6px}
+.sec-card p{color:var(--dim);font-size:13.5px;line-height:1.65}
+.warn{margin-top:24px;background:var(--red-bg);border:1px solid var(--red-line);border-radius:var(--r3);padding:22px 24px;display:flex;gap:14px;align-items:flex-start}
+.warn-icon{color:var(--red);font-size:20px;flex-shrink:0;margin-top:2px}
+.warn-title{color:var(--red);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.warn p{color:var(--ghost);font-size:14px;line-height:1.7;margin-bottom:10px}
+.warn p:last-child{margin-bottom:0}
+.warn strong{color:var(--bright)}
+.warn strong.gr{color:var(--green)}
+
+/* ---------- deploy ---------- */
+.dep-status{font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;padding:3px 10px;border-radius:999px}
+.dep-status.live{background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)}
+.dep-status.soon{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+.info-bar{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:16px 20px;margin-top:16px;display:flex;gap:12px;align-items:flex-start}
+.info-bar .ico{color:var(--amber);font-size:16px;flex-shrink:0;margin-top:1px}
+.info-bar p{color:var(--ghost);font-size:14px;line-height:1.65}
+.info-bar strong{color:var(--bright)}
+.stack{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:20px 24px;margin-top:16px}
+.stack-chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:var(--r2);padding:8px 14px;font-size:13px}
+.chip b{color:var(--bright);font-weight:700}
+.chip span{color:var(--muted);font-family:var(--fm);font-size:11px;margin-left:8px}
+
+/* ---------- pipeline ---------- */
+.rail{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r4);padding:32px 34px}
+.rail-step{display:flex;gap:16px;padding-bottom:22px;position:relative}
+.rail-step:last-child{padding-bottom:0}
+.rail-step::before{content:'';position:absolute;left:9px;top:22px;bottom:-2px;width:2px;background:var(--line)}
+.rail-step:last-child::before{display:none}
+.rail-step.done::before{background:var(--amber)}
+.rail-node{flex-shrink:0;width:20px;height:20px;border-radius:50%;margin-top:2px;display:flex;align-items:center;justify-content:center;border:2px solid var(--line);background:transparent;position:relative;z-index:1;font-size:10px;font-weight:900;color:#000}
+.rail-step.done .rail-node{background:var(--amber);border-color:var(--amber)}
+.rail-title{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+.rail-name{color:var(--bright);font-size:14px;font-weight:700}
+.rail-step.next .rail-name{color:var(--dim)}
+.rail-tag{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--line)}
+.rail-step.done .rail-tag{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-line)}
+.rail-step p{color:var(--dim);font-size:13px;line-height:1.6}
+
+/* ---------- nomad ---------- */
+.steps{display:flex;flex-direction:column;gap:20px}
+.step{display:flex;gap:16px;align-items:flex-start}
+.step-n{width:28px;height:28px;border-radius:50%;border:1px solid var(--amber-line);background:var(--amber-bg);color:var(--amber);font-family:var(--fm);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-t{color:var(--bright);font-size:14px;font-weight:700;margin-bottom:4px}
+.step p{color:var(--dim);font-size:13px;line-height:1.6}
+.feat{display:flex;gap:12px;align-items:flex-start}
+.feat .ico{color:var(--amber);font-size:16px;flex-shrink:0;margin-top:1px}
+.feat b{color:var(--bright);font-size:13px;font-weight:700}
+.feat span{color:var(--dim);font-size:13px}
+.nomad-card{background:linear-gradient(135deg,rgba(240,160,0,.05) 0%,var(--bg1) 60%);border:1px solid var(--amber-line);border-radius:var(--r4);padding:30px}
+.soonbar{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:16px}
+
+/* ---------- black box ---------- */
+.tier{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r4);padding:28px;position:relative}
+.tier.hi{background:rgba(240,160,0,.04);border-color:var(--amber-line)}
+.tier-pop{position:absolute;top:-13px;left:50%;transform:translateX(-50%)}
+.tier-pop span{background:var(--amber);color:#000;font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;padding:4px 13px;border-radius:999px}
+.tier-name{color:var(--bright);font-size:18px;font-weight:800;margin-bottom:4px}
+.tier-hw{color:var(--muted);font-family:var(--fm);font-size:11px;margin-bottom:16px}
+.tier-price{color:var(--amber);font-size:19px;font-weight:800;margin-bottom:16px}
+.tier button{width:100%;padding:11px 0;border-radius:var(--r2);font-size:13px;font-weight:700;cursor:not-allowed;opacity:.4;background:transparent;color:var(--ghost);border:1px solid var(--line2)}
+.tier.hi button{background:var(--amber);color:#000;border:none}
+.tier-specs{margin-top:24px;display:flex;flex-direction:column;gap:10px}
+.tier-spec{display:flex;gap:10px;align-items:flex-start}
+.tier-spec .tick{color:var(--amber);font-size:12px;flex-shrink:0;margin-top:3px;font-family:var(--fm)}
+.tier-spec span{color:var(--dim);font-size:13px}
+.enc-pill{display:inline-flex;align-items:center;gap:8px;background:var(--green-bg);border:1px solid var(--green-line);border-radius:999px;padding:7px 16px;margin-top:16px}
+.enc-pill span{color:var(--green);font-size:13px;font-weight:600}
+
+/* ---------- faq ---------- */
+.faq-tabs{display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap}
+.faq-tab{display:flex;flex-direction:column;align-items:flex-start;padding:12px 20px;border-radius:var(--r3);cursor:pointer;transition:border-color .2s,background .2s;border:1px solid var(--line);background:var(--bg1)}
+.faq-tab.active{border-color:var(--amber-line);background:var(--amber-bg)}
+.faq-tab .t{color:var(--bright);font-size:15px;font-weight:700}
+.faq-tab.active .t{color:var(--amber)}
+.faq-tab .s{color:var(--muted);font-size:12px;margin-top:2px}
+.faq-cols{display:grid;grid-template-columns:1.3fr 1fr;gap:48px;align-items:start}
+.faq-cols>*{min-width:0}
+@media(max-width:768px){.faq-cols{grid-template-columns:1fr;gap:32px}}
+.faq-list{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r4);padding:8px 24px}
+.faq-item{border-bottom:1px solid var(--line)}
+.faq-item:last-child{border-bottom:none}
+.faq-q{width:100%;text-align:left;padding:18px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;background:none;border:none;cursor:pointer}
+.faq-q .q{color:var(--bright);font-size:14px;font-weight:600;line-height:1.5}
+.faq-q .x{color:var(--amber);font-family:var(--fm);font-size:20px;line-height:1;flex-shrink:0;margin-top:2px;transition:transform .25s}
+.faq-item.open .faq-q .x{transform:rotate(45deg)}
+.faq-a{overflow:hidden;max-height:0;transition:max-height .3s ease}
+.faq-item.open .faq-a{max-height:400px}
+.faq-a p{color:var(--ghost);font-size:14px;line-height:1.7;padding-bottom:18px}
+.faq-side{position:sticky;top:88px}
+.faq-panel{display:none;flex-direction:column;gap:12px}
+.faq-panel.active{display:flex}
+.side-card{background:var(--bg1);border:1px solid var(--amber-line);border-radius:var(--r4);padding:26px}
+.side-card .lbl{color:var(--amber);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:14px}
+.side-card code{display:block;font-size:12px;margin-bottom:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.side-card code.am{color:var(--amber)}
+.side-card code.gh{color:var(--ghost)}
+.side-card .k{color:var(--muted);font-family:var(--fm);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+.side-card .sep{border-top:1px solid var(--line);margin:14px 0;padding:0}
+.side-link{display:flex;align-items:center;gap:8px;background:var(--bg1);border:1px solid var(--line);border-radius:var(--r3);padding:16px 20px;color:var(--bright);text-decoration:none;font-size:14px;font-weight:600;transition:border-color .15s}
+.side-link:hover{border-color:var(--amber-line)}
+.side-warn{background:var(--red-bg);border:1px solid var(--red-line);border-radius:var(--r3);padding:16px 20px}
+.side-warn .t{color:var(--red);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.side-warn p{color:var(--ghost);font-size:13px;line-height:1.6}
+.side-tier{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.side-tier b{color:var(--bright);font-size:14px}
+.side-tier span{color:var(--dim);font-family:var(--fm);font-size:11.5px}
+
+/* ---------- waitlist ---------- */
+.wait{background:radial-gradient(ellipse at 50% 0%,rgba(240,160,0,.08) 0%,var(--bg1) 60%);border:1px solid var(--amber-line);border-radius:var(--r4);padding:72px 48px;text-align:center;position:relative;overflow:hidden}
+@media(max-width:768px){.wait{padding:56px 24px}}
+.wait .lbl{color:var(--amber);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-bottom:16px}
+.wait h2{margin:0 0 16px}
+.wait .sub{color:var(--ghost);font-size:15px;max-width:420px;margin:0 auto 40px;line-height:1.7}
+.wait-form{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;max-width:460px;margin:0 auto}
+.wait-form input{flex:1;min-width:210px;padding:13px 16px;background:var(--bg);border:1px solid var(--line2);border-radius:var(--r2);color:var(--bright);font-family:var(--fd);font-size:14px;outline:none;transition:border-color .15s}
+.wait-form input:focus{border-color:var(--amber)}
+.wait-form input::placeholder{color:var(--muted)}
+.wait-ok{display:none;align-items:center;gap:8px;padding:13px 24px;background:var(--green-bg);border:1px solid var(--green-line);border-radius:var(--r2)}
+.wait-ok span{color:var(--green);font-size:14px;font-weight:600}
+.wait-err{display:none;color:var(--red);font-size:13px;margin-top:14px}
+.wait-note{color:var(--muted);font-family:var(--fm);font-size:11px;letter-spacing:.5px;margin-top:16px}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);padding:48px 24px 32px}
+.foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px;margin-bottom:44px}
+.foot-desc{color:var(--muted);font-size:13px;line-height:1.6;max-width:220px;margin:12px 0 16px}
+.foot-h{color:var(--muted);font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
+.foot-l{display:block;color:var(--ghost);font-size:13px;margin-bottom:10px;text-decoration:none;transition:color .15s}
+.foot-l:hover{color:var(--bright)}
+.foot-gh{display:inline-flex;align-items:center;gap:6px;color:var(--ghost);text-decoration:none;font-family:var(--fm);font-size:12px;transition:color .15s}
+.foot-gh:hover{color:var(--bright)}
+.foot-base{border-top:1px solid var(--line);padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.foot-base p{color:var(--muted);font-family:var(--fm);font-size:11px;letter-spacing:.5px}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="nav-in">
+    <a class="logo" href="#top">
+      <span class="logo-icon">M</span>
+      <span class="logo-name">Monolith</span>
+    </a>
+    <div class="nav-links">
+      <a href="#plugins">Features</a>
+      <a href="#security">Security</a>
+      <a href="#blackbox">Black Box</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="nav-cta">
+      <a class="gh-btn" href="https://github.com/K0-P0/Monolith" target="_blank" rel="noopener noreferrer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a class="nav-join" href="#waitlist">Join waitlist</a>
+    </div>
+  </div>
+</nav>
+
+<header id="hero">
+  <a id="top"></a>
+  <div class="hero-in g2">
+    <div>
+      <div class="hero-badges">
+        <span class="badge">Part of BarnOS</span>
+        <span class="badge green">V7.2 · Project VanGuard — Live</span>
+      </div>
+      <h1>Your finances.<br>Your hardware.<br><span class="am">Nobody else's business.</span></h1>
+      <p class="hero-sub">Monolith is a self-hosted personal finance platform with 19 plugins, Fernet encryption at rest, and mandatory 2FA. No cloud. No profile building. No ads. Your data on your machine.</p>
+      <p class="hero-quote">"They said they don't collect your data. They do. Monolith exists because that's not good enough."</p>
+      <div class="pullcmd">
+        <code id="pull-cmd">docker pull ghcr.io/k0-p0/monolith:latest</code>
+        <button id="copy-btn" type="button">Copy</button>
+      </div>
+      <div class="hero-ctas">
+        <a class="btn" href="https://github.com/K0-P0/Monolith" target="_blank" rel="noopener noreferrer">Get started — it's free</a>
+        <a class="btn-ghost" href="#waitlist">Join waitlist →</a>
+      </div>
+      <p class="hero-note">Open source · Docker · Bare metal · LXC · VPS · Black Box coming soon</p>
+    </div>
+    <div class="hero-right">
+      <div class="boot" id="boot">
+        <div class="boot-head">
+          <span class="boot-title">Monolith Display</span>
+          <span class="boot-dot"></span>
+        </div>
+        <div class="boot-body" id="boot-body"></div>
+        <div class="boot-foot">
+          <div class="boot-stat">
+            <span class="st" id="boot-status">Standby</span>
+            <span class="pc" id="boot-pct">0%</span>
+          </div>
+          <div class="boot-bar"><div class="boot-fill" id="boot-fill"></div></div>
+        </div>
+      </div>
+      <p class="hero-cap">Plug in. Power on. Go to your IP. That's it.</p>
+    </div>
+  </div>
+</header>
+
+<div id="ticker">
+  <div class="ticker-track" id="ticker-track"></div>
+</div>
+
+<section>
+  <div class="sec">
+    <span class="badge">Why it exists</span>
+    <h2>Finance apps that "don't collect data"<br><span class="am">collect your data.</span></h2>
+    <p class="lead">Every major finance app makes the same promise: we're just here to help. But behind the scenes they build a profile on you — what you earn, where you shop, what you care about. That profile gets sold. Monolith was built because that lie isn't acceptable.</p>
+    <div class="cmp">
+      <div class="cmp-row head">
+        <span class="cmp-h">Feature</span>
+        <span class="cmp-h" style="text-align:center">Other apps</span>
+        <span class="cmp-h us" style="text-align:center">Monolith</span>
+      </div>
+      <div class="cmp-row"><span class="cmp-l">Sells your data</span><span class="cmp-mark y">✓</span><span class="cmp-mark n">✗</span></div>
+      <div class="cmp-row alt"><span class="cmp-l">Builds a profile on you</span><span class="cmp-mark y">✓</span><span class="cmp-mark n">✗</span></div>
+      <div class="cmp-row"><span class="cmp-l">Requires internet connection</span><span class="cmp-mark y">✓</span><span class="cmp-mark n">✗</span></div>
+      <div class="cmp-row alt"><span class="cmp-l">Serves you ads</span><span class="cmp-mark y">✓</span><span class="cmp-mark n">✗</span></div>
+      <div class="cmp-row"><span class="cmp-l">You own your data</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+      <div class="cmp-row alt"><span class="cmp-l">Runs on your hardware</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+      <div class="cmp-row"><span class="cmp-l">Works fully offline</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+      <div class="cmp-row alt"><span class="cmp-l">No subscription required</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+      <div class="cmp-row"><span class="cmp-l">Database encrypted at rest</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+      <div class="cmp-row alt"><span class="cmp-l">Fully auditable source code</span><span class="cmp-mark n">✗</span><span class="cmp-mark ya">✓</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="plugins">
+  <div class="sec">
+    <span class="badge">19 plugins</span>
+    <h2>Everything you need.<br>Nothing phoning home.</h2>
+    <p class="lead">Every plugin is isolated — enable or disable with one click. Vault Bridge connects them all into a single financial picture.</p>
+    <p style="color:var(--muted);font-size:13px;margin:12px 0 40px">Plugins marked beta are functional but still being verified end-to-end.</p>
+    <div class="gplug" id="plugin-grid"></div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="sec">
+    <span class="badge">Security</span>
+    <h2>Privacy isn't a feature.<br><span class="am">It's the foundation.</span></h2>
+    <p class="lead" style="margin-bottom:48px">Every security decision in Monolith was made assuming the worst case — someone gets physical access to your hardware. Your data is still safe.</p>
+    <div class="sec-cards" id="sec-grid"></div>
+    <div class="warn">
+      <span class="warn-icon">⚠</span>
+      <div>
+        <p class="warn-title">Master key lives on the same drive</p>
+        <p>Monolith encrypts your data at rest using a master key — but that key is stored in the same directory as the application. If someone steals the physical drive, they could potentially access both the key and the encrypted data together.</p>
+        <p><strong>Recommendation: encrypt the drive Monolith runs on.</strong> Full-disk encryption (like LUKS on Linux) means the master key and your data are protected by a second layer — the drive is unreadable without the disk password, regardless of who has physical access to it.</p>
+        <p><strong class="gr">Black Box solves this by default.</strong> Every Black Box ships with full-disk encryption on the SD card and M.2 SSD baked in at the hardware level. If the drive is removed or the entire unit is stolen, the data on it is cryptographically unreadable. No password, no data.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="deploy">
+  <div class="sec">
+    <span class="badge">Run it your way</span>
+    <h2>Your setup. Your rules.</h2>
+    <p class="lead" style="margin-bottom:48px">Docker is the recommended path — one command and you're running. Bare metal on Proxmox, Ubuntu, or any VPS is fully supported too. Cloudflare Tunnel is optional for remote access, never required.</p>
+    <div class="g3">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+          <span style="color:var(--bright);font-size:16px;font-weight:700">Docker</span>
+          <span class="dep-status live">Recommended</span>
+        </div>
+        <p style="color:var(--dim);font-size:14px;line-height:1.65">docker pull ghcr.io/k0-p0/monolith:latest — one command, data persists in a named volume, updates in seconds.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+          <span style="color:var(--bright);font-size:16px;font-weight:700">Bare Metal / LXC</span>
+          <span class="dep-status live">Live</span>
+        </div>
+        <p style="color:var(--dim);font-size:14px;line-height:1.65">Clone the repo, run deploy.sh to set up Gunicorn as a system service. Works on Proxmox LXC, Ubuntu, Debian, or any VPS.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+          <span style="color:var(--bright);font-size:16px;font-weight:700">Black Box</span>
+          <span class="dep-status soon">Coming Soon</span>
+        </div>
+        <p style="color:var(--dim);font-size:14px;line-height:1.65">Pre-built Pi 5 hardware kits. Monolith pre-installed, plug into power and Ethernet, open your IP in a browser.</p>
+      </div>
+    </div>
+    <div class="info-bar">
+      <span class="ico">ℹ</span>
+      <p><strong>Cloudflare Tunnel is optional.</strong> Monolith serves plain HTTP on your local network. For anything internet-facing, put it behind a Cloudflare Tunnel and enable CF_ONLY mode once the tunnel is confirmed working.</p>
+    </div>
+    <div class="stack">
+      <span class="label">Under the hood</span>
+      <div class="stack-chips" id="stack-chips"></div>
+    </div>
+  </div>
+</section>
+
+<section id="roadmap">
+  <div class="sec">
+    <div class="g2" style="align-items:start">
+      <div>
+        <span class="badge">Where we're at</span>
+        <h2>Built in public.<br>Shipped for real.</h2>
+        <p class="lead" style="margin-bottom:24px">V7.2 is live. Docker is the recommended install. 19 plugins shipped, encryption, 2FA, admin panel, Vault Bridge — all done. The Nomad software is in the repo today; the pre-built NoMad stick and Black Box hardware are next.</p>
+        <a class="side-link" style="display:inline-flex" href="https://github.com/K0-P0/Monolith/releases" target="_blank" rel="noopener noreferrer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          View releases on GitHub
+        </a>
+      </div>
+      <div class="rail">
+        <span class="label" style="display:block;margin-bottom:28px">Build pipeline</span>
+        <div id="rail-steps"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="nomad">
+  <div class="sec">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2px">
+      <span class="badge">NoMad</span>
+      <span class="badge green">Software in the repo today</span>
+    </div>
+    <h2>Monolith in your pocket.<br><span class="am">No install. No trace.</span></h2>
+    <p class="lead" style="margin-bottom:48px">NoMad is Monolith on a USB stick. Plug into a Windows or Linux PC, run one script, and Monolith is live in your browser — reading and writing only to the stick. When you're done, pull it. Nothing stays behind.</p>
+
+    <div class="g2" style="gap:16px;align-items:start;margin-bottom:16px">
+      <div class="card" style="padding:32px">
+        <span class="label" style="display:block;margin-bottom:24px">How it works</span>
+        <div class="steps">
+          <div class="step"><span class="step-n">1</span><div><p class="step-t">Plug in the USB</p><p>Monolith lives on the stick. Nothing gets installed on the host machine.</p></div></div>
+          <div class="step"><span class="step-n">2</span><div><p class="step-t">Run the script</p><p>On Windows run launch.bat. On Linux run bash launch.sh. No setup, no configuration.</p></div></div>
+          <div class="step"><span class="step-n">3</span><div><p class="step-t">Your browser opens</p><p>The launcher opens a single-use launch link on localhost:5000. Monolith is running, fully functional, visible only to that PC.</p></div></div>
+          <div class="step"><span class="step-n">4</span><div><p class="step-t">Pull and go</p><p>Close the tab and Nomad shuts itself down moments later. Pull the stick — your data leaves with you.</p></div></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="nomad-card">
+          <span class="label" style="display:block;margin-bottom:20px">What makes it different</span>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="feat"><span class="ico">◈</span><div><b>Single-use launch — </b><span>every boot mints a one-time launch token and a fresh session key. A cookie left on a shared PC is useless afterwards.</span></div></div>
+            <div class="feat"><span class="ico">⬡</span><div><b>Auto-shutdown — </b><span>close the tab and Nomad shuts down on its own about 25 seconds later, telling the browser to clear site data on the way out.</span></div></div>
+            <div class="feat"><span class="ico">◻</span><div><b>Data stays on USB — </b><span>your financial data is read from and written only to the stick, never the host filesystem.</span></div></div>
+            <div class="feat"><span class="ico">⊕</span><div><b>Cross-platform — </b><span>one stick works on Windows (launch.bat) and Linux (launch.sh). No separate versions.</span></div></div>
+            <div class="feat"><span class="ico">⟳</span><div><b>Try before you commit — </b><span>the perfect way to test Monolith before a permanent install. Export your data as JSON and import it later.</span></div></div>
+          </div>
+        </div>
+
+        <div class="info-bar" style="margin-top:0">
+          <span class="ico">ℹ</span>
+          <p><strong>One requirement today: the host PC needs Python 3.10+.</strong> The pre-built NoMad stick bundles its own portable runtime so the host needs nothing at all — that's what "coming soon" means.</p>
+        </div>
+
+        <div class="side-warn">
+          <p class="t">⚠ Honest disclaimer</p>
+          <p>NoMad is designed to minimize its footprint on the host machine and makes every effort to leave no trace. However, <strong style="color:var(--bright)">we cannot guarantee zero traces in all cases.</strong> Operating systems may write swap files, temp caches, or memory pages to disk under conditions outside our control. If absolute zero-trace operation is a hard requirement, use NoMad on an air-gapped machine or one with an encrypted drive.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="soonbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="color:var(--amber);font-size:20px">⎔</span>
+        <div>
+          <p style="color:var(--bright);font-size:14px;font-weight:700">The pre-built NoMad stick ships before the Black Box</p>
+          <p style="color:var(--dim);font-size:13px">Join the waitlist to be notified when it drops.</p>
+        </div>
+      </div>
+      <span class="badge">Coming soon</span>
+    </div>
+  </div>
+</section>
+
+<section id="blackbox">
+  <div class="sec">
+    <div style="text-align:center;max-width:620px;margin:0 auto 64px">
+      <span class="badge">Black Box — Coming soon</span>
+      <h2>Monolith. Pre-built.<br>Plug in and go.</h2>
+      <p class="lead" style="max-width:none;margin:0 auto">Not everyone wants to run a server. The Black Box ships with Monolith pre-installed on real hardware. Plug into power and Ethernet — the screen shows your IP — open it in a browser — create your account. Done.</p>
+      <div class="enc-pill">
+        <span>🔒</span>
+        <span>Every drive fully encrypted at the hardware level — SD card and M.2 SSD</span>
+      </div>
+    </div>
+    <div class="g3" style="margin-bottom:48px" id="tier-grid"></div>
+    <div class="card" style="padding:40px">
+      <span class="label" style="display:block;text-align:center;margin-bottom:36px">How it works</span>
+      <div class="g4">
+        <div style="text-align:center"><div class="step-n" style="width:40px;height:40px;font-size:17px;margin:0 auto 16px">1</div><p class="step-t">It arrives</p><p style="color:var(--dim);font-size:13px;line-height:1.6">Pre-built. Monolith pre-installed. Nothing to configure.</p></div>
+        <div style="text-align:center"><div class="step-n" style="width:40px;height:40px;font-size:17px;margin:0 auto 16px">2</div><p class="step-t">Plug it in</p><p style="color:var(--dim);font-size:13px;line-height:1.6">Ethernet to your router. Power to the wall. Screen lights up.</p></div>
+        <div style="text-align:center"><div class="step-n" style="width:40px;height:40px;font-size:17px;margin:0 auto 16px">3</div><p class="step-t">Go to your IP</p><p style="color:var(--dim);font-size:13px;line-height:1.6">Display shows your local address. Open it in any browser.</p></div>
+        <div style="text-align:center"><div class="step-n" style="width:40px;height:40px;font-size:17px;margin:0 auto 16px">4</div><p class="step-t">Create your account</p><p style="color:var(--dim);font-size:13px;line-height:1.6">First account registered becomes admin. Data lives on device only.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="sec">
+    <span class="badge">FAQ</span>
+    <h2>Straight answers<br>to fair questions.</h2>
+    <p class="lead" style="margin-bottom:40px">Each product has its own questions. Pick the one you care about.</p>
+
+    <div class="faq-tabs" id="faq-tabs">
+      <button class="faq-tab active" data-tab="monolith" type="button"><span class="t">Monolith</span><span class="s">Self-hosted app</span></button>
+      <button class="faq-tab" data-tab="nomad" type="button"><span class="t">NoMad</span><span class="s">Portable USB</span></button>
+      <button class="faq-tab" data-tab="blackbox" type="button"><span class="t">Black Box</span><span class="s">Hardware kit</span></button>
+    </div>
+
+    <div class="faq-cols">
+      <div class="faq-list" id="faq-list"></div>
+      <div class="faq-side">
+        <div class="faq-panel active" data-panel="monolith">
+          <div class="side-card">
+            <p class="lbl">Quick install</p>
+            <code class="am">docker pull ghcr.io/k0-p0/monolith:latest</code>
+            <code class="gh">docker run -d -p 80:80 -v monolith_storage:/app/storage --name monolith ghcr.io/k0-p0/monolith:latest</code>
+          </div>
+          <a class="side-link" href="https://github.com/K0-P0/Monolith" target="_blank" rel="noopener noreferrer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            View full docs on GitHub
+          </a>
+        </div>
+        <div class="faq-panel" data-panel="nomad">
+          <div class="side-card">
+            <p class="lbl">Launch commands</p>
+            <p class="k">Windows</p>
+            <code class="am">launch.bat</code>
+            <p class="k" style="margin-top:12px">Linux</p>
+            <code class="am">bash launch.sh</code>
+            <div class="sep"></div>
+            <p class="k">Then</p>
+            <code class="gh">your browser opens localhost:5000 automatically</code>
+          </div>
+          <div class="side-warn">
+            <p class="t">Remember</p>
+            <p>Zero trace is a best-effort guarantee. OS swap and cache behaviour is outside our control — and today the host still needs Python 3.10+.</p>
+          </div>
+        </div>
+        <div class="faq-panel" data-panel="blackbox">
+          <div class="side-card">
+            <p class="lbl">Available tiers</p>
+            <div class="side-tier"><b>Core</b><span>Pi 5 4GB · 64GB SD</span></div>
+            <div class="side-tier"><b>Pro</b><span>Pi 5 8GB · M.2 128GB</span></div>
+            <div class="side-tier"><b>Max</b><span>Pi 5 8GB · M.2 512GB</span></div>
+            <p style="color:var(--muted);font-size:12px;margin-top:14px">All tiers — fully encrypted storage · Coming soon</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="waitlist" style="border-bottom:none">
+  <div class="sec">
+    <div class="wait">
+      <p class="lbl">Early access</p>
+      <h2>Be first when the Black Box ships.</h2>
+      <p class="sub">One email when it's ready. No newsletter. No drip campaign. Just the launch notice and a link to order.</p>
+      <form class="wait-form" id="wait-form">
+        <input type="email" id="wait-email" placeholder="your@email.com" autocomplete="email" required>
+        <input type="text" id="wait-name" name="name" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+        <button class="btn" type="submit" id="wait-btn">Join waitlist</button>
+      </form>
+      <div class="wait-ok" id="wait-ok"><span>✓</span><span>You're on the list. One email when it's ready.</span></div>
+      <p class="wait-err" id="wait-err">Couldn't reach the waitlist right now — please try again in a minute.</p>
+      <p class="wait-note">No spam. Your email stays with us — never sold.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="logo" href="#top">
+          <span class="logo-icon" style="width:28px;height:28px;font-size:13px">M</span>
+          <span class="logo-name" style="font-size:16px">Monolith</span>
+        </a>
+        <p class="foot-desc">Self-hosted personal finance. Part of the BarnOS ecosystem.</p>
+        <a class="foot-gh" href="https://github.com/K0-P0/Monolith" target="_blank" rel="noopener noreferrer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          K0-P0/Monolith
+        </a>
+      </div>
+      <div>
+        <p class="foot-h">Product</p>
+        <a class="foot-l" href="#plugins">Features</a>
+        <a class="foot-l" href="#security">Security</a>
+        <a class="foot-l" href="#blackbox">Black Box</a>
+        <a class="foot-l" href="#roadmap">Roadmap</a>
+      </div>
+      <div>
+        <p class="foot-h">Products</p>
+        <a class="foot-l" href="#deploy">Self-hosted</a>
+        <a class="foot-l" href="#nomad">NoMad USB</a>
+        <a class="foot-l" href="#waitlist">Waitlist</a>
+      </div>
+      <div>
+        <p class="foot-h">Support</p>
+        <a class="foot-l" href="#faq">FAQ</a>
+        <a class="foot-l" href="https://github.com/K0-P0/Monolith#readme" target="_blank" rel="noopener noreferrer">Install guide</a>
+        <a class="foot-l" href="https://github.com/K0-P0/Monolith/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+      </div>
+    </div>
+    <div class="foot-base">
+      <p>© 2026 Monolith · BarnOS Project · V7.2 Project VanGuard · Your data never leaves your hardware.</p>
+      <p>Built different. For a reason.</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+const PLUGINS = [
+  { name: "Paycheck Pro", desc: "Gross-to-net calculator with 401k & tax engine, payroll import & cashflow projections." },
+  { name: "OT Vault", desc: "Log individual overtime shifts and calculate net take-home pay." },
+  { name: "Freelance Flow", desc: "Track clients, jobs, invoices, payouts, expenses, and tax holdback for freelance income." },
+  { name: "Bills", desc: "Recurring monthly bills with autopay tracking." },
+  { name: "Subscriptions", desc: "Track recurring subscriptions and their billing cycles." },
+  { name: "Expenses", desc: "Log and categorize daily spending." },
+  { name: "Debt Payoff", desc: "Track debts, minimums, APR, and payoff progress." },
+  { name: "Savings & Retirement", desc: "Goal tracker with Roth IRA and 401k support." },
+  { name: "Budgets", desc: "Set monthly category limits and track against actual spending." },
+  { name: "Goals", desc: "Big-picture financial goals with progress bars, target dates, and pace-to-goal math.", beta: true },
+  { name: "Net Worth", desc: "Track total assets vs liabilities and watch your net worth grow over time.", beta: true },
+  { name: "Tax Prep", desc: "Deductible expenses, quarterly estimates, and a filing checklist.", beta: true },
+  { name: "Bank Sync", desc: "Connect a bank via SimpleFIN for real balances and transactions.", beta: true },
+  { name: "Reports", desc: "Charts and analytics across all your financial data." },
+  { name: "Calendar", desc: "Visual calendar of bills, subscriptions, and paydays." },
+  { name: "Upcoming", desc: "A feed of upcoming bills, subscriptions, paydays, and scheduled money events." },
+  { name: "Garage", desc: "Vehicles, service history, insurance, and registration due dates." },
+  { name: "Quick Math", desc: "Receipt calculator widget on your dashboard." },
+  { name: "Vault Style", desc: "Color palettes and background patterns — make it yours. Applies instantly." },
+];
+
+const SECURITY = [
+  { icon: "◈", title: "Fernet encryption at rest", desc: "All user data encrypted with AES-128-CBC + HMAC. Unreadable without your key. Important: the master key lives on the same drive as Monolith — full-disk encryption on your host is strongly recommended." },
+  { icon: "⬡", title: "Mandatory TOTP 2FA", desc: "Two-factor auth is required for every account. Cannot be skipped. Replay protection included." },
+  { icon: "⊕", title: "bcrypt password hashing", desc: "Passwords never stored in plain text. bcrypt with proper cost factor." },
+  { icon: "◻", title: "Rate limiting on all endpoints", desc: "Login and TOTP endpoints are rate limited. SQLite-backed, multi-worker safe." },
+  { icon: "⟳", title: "Secure session cookies", desc: "HttpOnly, SameSite=Lax, and Secure when behind HTTPS. No XSS cookie theft." },
+  { icon: "⎔", title: "Security event logging", desc: "Every auth event written to security.log. Full audit trail on your machine." },
+];
+
+const PIPELINE = [
+  { label: "Core platform", status: "done", desc: "Python / Flask / Gunicorn production stack. SQLite WAL mode for multi-worker safety." },
+  { label: "19 plugins", status: "done", desc: "Full plugin suite shipped — finance, budgeting, garage, bank sync, reports and more." },
+  { label: "Fernet encryption", status: "done", desc: "Per-user AES-128-CBC + HMAC encryption at rest. All data encrypted, always." },
+  { label: "Mandatory 2FA", status: "done", desc: "TOTP two-factor auth required for every account. Replay protection active." },
+  { label: "Docker image", status: "done", desc: "docker pull ghcr.io/k0-p0/monolith:latest — one command to run anywhere." },
+  { label: "Admin panel", status: "done", desc: "User management, global plugin controls, security log viewer." },
+  { label: "JSON backup / import", status: "done", desc: "Full data export and import. Your data is always portable." },
+  { label: "Nomad software", status: "done", desc: "The portable no-trace mode ships in the repo: single-use launch, auto-shutdown, fresh session key every boot." },
+  { label: "Vault Bridge overhaul", status: "done", desc: "V7.2 — plugin provider hooks, server-side dashboard summary, richer calendar events." },
+  { label: "NoMad USB stick", status: "next", desc: "Pre-built stick with a bundled portable runtime — no Python needed on the host. Run Monolith on any Windows or Linux PC." },
+  { label: "Black Box hardware", status: "next", desc: "Pre-built Pi 5 kits. Plug in, power on, done. Coming soon." },
+];
+
+const STACK = [
+  { name: "Python", desc: "Backend" },
+  { name: "Flask", desc: "API layer" },
+  { name: "Gunicorn", desc: "Production WSGI" },
+  { name: "SQLite WAL", desc: "Database" },
+  { name: "Fernet", desc: "Encryption at rest" },
+  { name: "bcrypt", desc: "Password hashing" },
+  { name: "pyotp", desc: "TOTP 2FA" },
+  { name: "Docker", desc: "Recommended deploy" },
+];
+
+const TIERS = [
+  { name: "Core", hw: "Pi 5 · 4GB · 64GB SD", hi: false, specs: ["Raspberry Pi 5 — 4GB RAM", "64GB high-endurance SD card — fully encrypted", "IP display on boot", "All 19 plugins included"] },
+  { name: "Pro", hw: "Pi 5 · 8GB · M.2 128GB", hi: true, specs: ["Raspberry Pi 5 — 8GB RAM", "M.2 HAT + 128GB SSD — fully encrypted", "IP display on boot", "All 19 plugins + priority updates"] },
+  { name: "Max", hw: "Pi 5 · 8GB · M.2 512GB", hi: false, specs: ["Raspberry Pi 5 — 8GB RAM", "M.2 HAT + 512GB SSD — fully encrypted", "IP display on boot", "All 19 plugins + priority updates"] },
+];
+
+const FAQS = {
+  monolith: [
+    { q: "Where is my data stored?", a: "On your own hardware — your server, Docker container, or the Black Box. It never touches our infrastructure." },
+    { q: "Is my data encrypted?", a: "Yes — but with an important caveat. Monolith encrypts all user data using Fernet (AES-128-CBC + HMAC). However, the master key is stored on the same drive as the application. Full-disk encryption on your host machine is strongly recommended. On the Black Box this is handled for you automatically." },
+    { q: "Do I need Cloudflare Tunnel?", a: "No. Monolith runs on your local network by default — just open your IP in a browser. Cloudflare Tunnel is optional if you want remote access from outside your home. Once the tunnel is confirmed working, enable CF_ONLY mode to lock it to tunnel-only traffic." },
+    { q: "How do I install it?", a: "Docker is the recommended method. Pull ghcr.io/k0-p0/monolith:latest, run it with a named volume for storage, and open localhost in your browser. The first account registered becomes the admin. Bare metal on Proxmox LXC, Ubuntu, or any VPS is also fully supported." },
+    { q: "Can I audit the code?", a: "Yes. Monolith is fully open source at github.com/K0-P0/Monolith. Every module, the encryption layer, the 2FA implementation — all of it is readable." },
+    { q: "What if I want to self-host without Docker?", a: "Clone the repo, create a Python virtual environment, install requirements, and run deploy.sh to set up Gunicorn as a system service. The runM script handles start, stop, restart, and status." },
+    { q: "Is 2FA really mandatory?", a: "Yes. TOTP two-factor authentication is required for every account and cannot be skipped or disabled. Backup codes are provided at setup. Replay protection prevents code reuse." },
+  ],
+  nomad: [
+    { q: "What is NoMad exactly?", a: "NoMad is Monolith on a USB stick. The Nomad build ships in the repo today — put it on a stick, plug into a Windows or Linux PC, run one script, and Monolith is live in your browser, reading and writing only to the stick. The pre-built NoMad stick with a bundled runtime is what's coming soon." },
+    { q: "Does it install anything on the host machine?", a: "No. Nothing is installed on the host — Monolith runs from the stick and all data stays on the stick. One current requirement: the host needs Python 3.10+ installed. Bundling a portable runtime on the stick, so the host needs nothing at all, is the next step on the roadmap." },
+    { q: "How do I launch it?", a: "On Windows, run launch.bat. On Linux, run bash launch.sh. The launcher starts Monolith on localhost:5000 and opens your browser to a single-use launch link. That's the entire process." },
+    { q: "Is it really zero trace?", a: "NoMad is designed to leave no trace and makes every effort to achieve that: it shuts itself down about 25 seconds after you close the tab, tells the browser to clear site data on logout, marks every response as never-cache, and uses a fresh session key each boot. However, we cannot guarantee zero traces in all cases — operating systems may write swap files, temp caches, or memory pages to disk under conditions outside our control. If absolute zero-trace operation is a hard requirement, use NoMad on an air-gapped or fully encrypted machine." },
+    { q: "Where is my data stored on NoMad?", a: "All Monolith data is stored on the USB stick itself — never on the host machine. Pull the stick and the data leaves with you." },
+    { q: "Can I use NoMad data on a permanent Monolith install later?", a: "Yes. Monolith has full JSON export and import. Export your data from NoMad, import it into a permanent Docker or bare metal install, and everything carries over." },
+    { q: "What speed USB do I need?", a: "A USB 3.0 stick is strongly recommended. USB 2.0 will work but will be noticeably slower since Monolith is running entirely from the drive." },
+  ],
+  blackbox: [
+    { q: "What is the Black Box?", a: "The Black Box is a pre-built Raspberry Pi 5 with Monolith pre-installed, a small display that shows your IP on boot, and full-disk encryption on the storage. Plug into power and Ethernet, open your IP in a browser, create your account — done." },
+    { q: "How is the Black Box more secure than self-hosting?", a: "Every Black Box ships with full-disk encryption on the SD card and M.2 SSD baked in at the hardware level. This solves the master key co-location problem that exists in self-hosted setups — even if someone physically takes the drive, it is cryptographically unreadable without the disk password." },
+    { q: "Do I need any technical knowledge?", a: "None. Plug into power, plug into Ethernet, wait for the display to show your IP, open it in a browser on any device on your network, create your account. No terminal, no config files, no setup." },
+    { q: "What network does it need?", a: "Just a standard home router with an Ethernet port. The Black Box gets an IP from your router via DHCP and displays it on boot. No special networking required." },
+    { q: "What happens if the Black Box fails?", a: "Your data lives on the SD card or M.2 SSD inside. Remove it, put it in a replacement unit, and you're back. A full recovery guide ships with every unit." },
+    { q: "Can I access it remotely?", a: "By default it's local-network only. If you want remote access, Cloudflare Tunnel is supported — install cloudflared on the Black Box and point it at localhost:80. This is optional and never required." },
+    { q: "When does it ship?", a: "No date until we have one we can keep. The NoMad stick ships first. Join the waitlist — one email when the Black Box is ready, nothing else." },
+  ],
+};
+
+const BOOT = [
+  { text: "Monolith OS booting...", delay: 0, cls: "c-muted", pct: 0 },
+  { text: "Checking hardware... OK", delay: 900, cls: "c-ghost", pct: 15 },
+  { text: "Loading 19 plugins... OK", delay: 1900, cls: "c-ghost", pct: 35 },
+  { text: "Vault encryption... OK", delay: 3000, cls: "c-ghost", pct: 55 },
+  { text: "Mounting storage... OK", delay: 4000, cls: "c-ghost", pct: 70 },
+  { text: "Network detected... OK", delay: 5000, cls: "c-ghost", pct: 85 },
+  { text: "─────────────────────", delay: 6000, cls: "c-line", pct: 95 },
+  { text: "Your Monolith is ready.", delay: 6800, cls: "c-bright", pct: 100 },
+  { text: "Go to -> 192.168.1.42", delay: 7800, cls: "c-amber", pct: 100, cursor: true },
+];
+const BOOT_COLORS = { "c-muted": "var(--muted)", "c-ghost": "var(--ghost)", "c-line": "var(--line2)", "c-bright": "var(--bright)", "c-amber": "var(--amber)" };
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+document.getElementById("plugin-grid").innerHTML = PLUGINS.map(p => `
+  <div class="plug">
+    <div class="plug-head">
+      <span class="plug-name">${esc(p.name)}</span>
+      ${p.beta ? '<span class="plug-beta">beta</span>' : ""}
+    </div>
+    <p>${esc(p.desc)}</p>
+  </div>`).join("");
+
+document.getElementById("sec-grid").innerHTML = SECURITY.map(x => `
+  <div class="sec-card">
+    <div class="sec-icon">${x.icon}</div>
+    <div class="sec-title">${esc(x.title)}</div>
+    <p>${esc(x.desc)}</p>
+  </div>`).join("");
+
+document.getElementById("stack-chips").innerHTML = STACK.map(t =>
+  `<div class="chip"><b>${esc(t.name)}</b><span>${esc(t.desc)}</span></div>`).join("");
+
+document.getElementById("rail-steps").innerHTML = PIPELINE.map(step => `
+  <div class="rail-step ${step.status}">
+    <div class="rail-node">${step.status === "done" ? "✓" : ""}</div>
+    <div>
+      <div class="rail-title">
+        <span class="rail-name">${esc(step.label)}</span>
+        <span class="rail-tag">${step.status === "done" ? "Done" : "Next"}</span>
+      </div>
+      <p>${esc(step.desc)}</p>
+    </div>
+  </div>`).join("");
+
+document.getElementById("tier-grid").innerHTML = TIERS.map(t => `
+  <div class="tier${t.hi ? " hi" : ""}">
+    ${t.hi ? '<div class="tier-pop"><span>Most popular</span></div>' : ""}
+    <div class="tier-name">${esc(t.name)}</div>
+    <div class="tier-hw">${esc(t.hw)}</div>
+    <div class="tier-price">Coming Soon</div>
+    <button type="button" disabled>Notify me</button>
+    <div class="tier-specs">
+      ${t.specs.map(sp => `<div class="tier-spec"><span class="tick">✓</span><span>${esc(sp)}</span></div>`).join("")}
+    </div>
+  </div>`).join("");
+
+const tickerItems = ["19 plugins", "Fernet encrypted", "Mandatory 2FA", "Docker ready", "Open source", "Nomad no-trace mode", "No cloud ever", "bcrypt passwords"];
+document.getElementById("ticker-track").innerHTML =
+  Array(4).fill(tickerItems).flat().map(t => `<span>${esc(t)}</span>`).join("");
+
+const faqList = document.getElementById("faq-list");
+function renderFaq(tab) {
+  faqList.innerHTML = FAQS[tab].map(f => `
+    <div class="faq-item">
+      <button class="faq-q" type="button" aria-expanded="false">
+        <span class="q">${esc(f.q)}</span><span class="x">+</span>
+      </button>
+      <div class="faq-a"><p>${esc(f.a)}</p></div>
+    </div>`).join("");
+}
+renderFaq("monolith");
+
+faqList.addEventListener("click", e => {
+  const q = e.target.closest(".faq-q");
+  if (!q) return;
+  const item = q.parentElement;
+  const open = item.classList.toggle("open");
+  q.setAttribute("aria-expanded", open);
+});
+
+document.getElementById("faq-tabs").addEventListener("click", e => {
+  const btn = e.target.closest(".faq-tab");
+  if (!btn) return;
+  document.querySelectorAll(".faq-tab").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll(".faq-panel").forEach(p =>
+    p.classList.toggle("active", p.dataset.panel === btn.dataset.tab));
+  renderFaq(btn.dataset.tab);
+});
+
+const nav = document.getElementById("nav");
+addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 40), { passive: true });
+
+const copyBtn = document.getElementById("copy-btn");
+copyBtn.addEventListener("click", () => {
+  navigator.clipboard.writeText("docker pull ghcr.io/k0-p0/monolith:latest").then(() => {
+    copyBtn.textContent = "Copied!";
+    copyBtn.classList.add("ok");
+    setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }, 2000);
+  });
+});
+
+const WAITLIST_URL = "https://monolith-waitlist.caldwelldekoda4053-dd2.workers.dev/";
+document.getElementById("wait-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = document.getElementById("wait-email").value.trim();
+  if (!email) return;
+  const btn = document.getElementById("wait-btn");
+  const err = document.getElementById("wait-err");
+  err.style.display = "none";
+  btn.disabled = true;
+  btn.textContent = "Joining...";
+  try {
+    const res = await fetch(WAITLIST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name: document.getElementById("wait-name").value }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    document.getElementById("wait-form").style.display = "none";
+    document.getElementById("wait-ok").style.display = "inline-flex";
+  } catch {
+    err.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Join waitlist";
+  }
+});
+
+const bootBody = document.getElementById("boot-body");
+const bootFill = document.getElementById("boot-fill");
+const bootPct = document.getElementById("boot-pct");
+const bootStatus = document.getElementById("boot-status");
+bootBody.innerHTML = BOOT.map(l =>
+  `<div class="boot-line" style="color:${BOOT_COLORS[l.cls]}">${esc(l.text)}${l.cursor ? '<span class="cursor"></span>' : ""}</div>`).join("");
+const bootLines = bootBody.children;
+
+let bootStarted = false;
+function runBoot() {
+  if (bootStarted) return;
+  bootStarted = true;
+  bootStatus.textContent = "Booting...";
+  const fast = location.search.includes("fast");
+  if (fast) document.getElementById("boot").classList.add("notrans");
+  BOOT.forEach((line, i) => {
+    const show = () => {
+      bootLines[i].classList.add("on");
+      bootFill.style.width = line.pct + "%";
+      bootPct.textContent = line.pct + "%";
+      bootPct.classList.toggle("full", line.pct === 100);
+      if (i === BOOT.length - 1) bootStatus.textContent = "Boot complete";
+    };
+    if (fast) show(); else setTimeout(show, line.delay + 300);
+  });
+}
+
+if ("IntersectionObserver" in window) {
+  const io = new IntersectionObserver(entries => {
+    if (entries.some(en => en.isIntersecting)) { runBoot(); io.disconnect(); }
+  }, { threshold: 0.3 });
+  io.observe(document.getElementById("boot"));
+} else {
+  runBoot();
+}
+</script>
+</body>
+</html>
